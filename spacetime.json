@@ -1,6 +1,6 @@
 {
   "dev": {
-    "run": "cargo run"
+    "run": "cargo run -p location-source"
   },
   "server": "local",
   "module-path": "./spacetimedb",

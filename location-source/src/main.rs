@@ -34,17 +34,13 @@ fn report_ship_locations(conn: &DbConnection) {
 }
 
 fn main() {
-    // The URI of the SpacetimeDB instance hosting our chat module.
     let host: String = env::var("SPACETIMEDB_HOST").unwrap_or("http://localhost:3000".to_string());
-
-    // The module name we chose when we published our module.
     let db_name: String = env::var("SPACETIMEDB_DB_NAME").unwrap_or("my-db".to_string());
     eprintln!(
         "Connecting to SpacetimeDB at: {} with database: {}",
         host, db_name
     );
 
-    // Connect to the database
     let conn = DbConnection::builder()
         .with_database_name(db_name)
         .with_uri(host)
@@ -60,7 +56,6 @@ fn main() {
 
     conn.run_threaded();
 
-    // Subscribe to the tables used by the client.
     conn.subscription_builder()
         .on_applied(|ctx| {
             println!("Subscribed to ship and location_reporter tables");
@@ -71,7 +66,6 @@ fn main() {
         .add_query(|q| q.from.location_reporter())
         .subscribe();
 
-    // Register a callback for when rows are inserted into the ship table
     conn.db().ship().on_insert(|_ctx, ship| {
         println!("New ship: {}", ship.name);
     });
@@ -83,7 +77,6 @@ fn main() {
         );
     });
 
-    // Keep the main thread alive so the connection stays open
     loop {
         report_ship_locations(&conn);
         std::thread::sleep(Duration::from_secs(1));

@@ -1,10 +1,4 @@
-[package]
-name = "ship_spacetime"
-version = "0.1.0"
-edition = "2021"
-
 [workspace]
+members = ["location-source"]
 exclude = ["spacetimedb"]
-
-[dependencies]
-spacetimedb-sdk = { version = "2.2.*" }
+resolver = "2"

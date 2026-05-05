@@ -1,0 +1,7 @@
+[package]
+name = "location-source"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+spacetimedb-sdk = { version = "2.2.*" }

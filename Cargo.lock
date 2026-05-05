@@ -1032,6 +1032,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "92daf443525c4cce67b150400bc2316076100ce0b3686209eb8cf3c31612e6f0"
 
 [[package]]
+name = "location-source"
+version = "0.1.0"
+dependencies = [
+ "spacetimedb-sdk",
+]
+
+[[package]]
 name = "lock_api"
 version = "0.4.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1633,13 +1640,6 @@ checksum = "77fd7028345d415a4034cf8777cd4f8ab1851274233b45f84e3d955502d93874"
 dependencies = [
  "digest",
  "keccak",
-]
-
-[[package]]
-name = "ship_spacetime"
-version = "0.1.0"
-dependencies = [
- "spacetimedb-sdk",
 ]
 
 [[package]]
