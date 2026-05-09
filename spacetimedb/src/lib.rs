@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use spacetimedb::{ReducerContext, Table, TimeDuration, Timestamp};
+use spacetimedb::{ReducerContext, SpacetimeType, Table, TimeDuration, Timestamp, ViewContext, view};
 
 const PROJECTION_VISIBILITY_WINDOW_MICROS: i64 = 10 * 60 * 1_000_000;
 
@@ -61,6 +61,11 @@ struct ProjectionEstimate {
     before_timestamp: Timestamp,
     after_timestamp: Option<Timestamp>,
     used_dead_reckoning: bool,
+}
+
+#[derive(SpacetimeType, Clone, Debug)]
+pub struct OldestLocationReportTime {
+    timestamp: Timestamp,
 }
 
 fn insert_location_report(
@@ -250,6 +255,38 @@ pub fn set_current_time(_ctx: &ReducerContext, timestamp: Timestamp) -> Result<(
         .checked_add(TimeDuration::from_micros(60_000_000))
         .ok_or("Timestamp overflow")?;
     Ok(())
+}
+
+#[view(accessor = oldest_location_report_time, public)]
+pub fn oldest_location_report_time(ctx: &ViewContext) -> Option<OldestLocationReportTime> {
+    let report = ctx
+        .db
+        .location_report()
+        .by_time()
+        .filter(Timestamp::UNIX_EPOCH..)
+        .next()?;
+
+    Some(OldestLocationReportTime {
+        timestamp: report.timestamp,
+    })
+}
+
+// Note that it isn't very efficient to scan through all reports to find the newest timestamp, but this is just an example.
+#[view(accessor = newest_location_report_time, public)]
+pub fn newest_location_report_time(ctx: &ViewContext) -> Option<OldestLocationReportTime> {
+    let mut newest = None;
+    for report in ctx
+        .db
+        .location_report()
+        .by_time()
+        .filter(Timestamp::UNIX_EPOCH..)
+    {
+        newest = Some(report.timestamp);
+    }
+
+    Some(OldestLocationReportTime {
+        timestamp: newest?,
+    })
 }
 
 #[spacetimedb::reducer]

@@ -10,6 +10,9 @@ pub mod add_location_report_reducer;
 pub mod add_ship_reducer;
 pub mod location_report_table;
 pub mod location_report_type;
+pub mod newest_location_report_time_table;
+pub mod oldest_location_report_time_table;
+pub mod oldest_location_report_time_type;
 pub mod project_ship_locations_reducer;
 pub mod set_current_time_reducer;
 pub mod ship_projection_table;
@@ -21,6 +24,9 @@ pub use add_location_report_reducer::add_location_report;
 pub use add_ship_reducer::add_ship;
 pub use location_report_table::*;
 pub use location_report_type::LocationReport;
+pub use newest_location_report_time_table::*;
+pub use oldest_location_report_time_table::*;
+pub use oldest_location_report_time_type::OldestLocationReportTime;
 pub use project_ship_locations_reducer::project_ship_locations;
 pub use set_current_time_reducer::set_current_time;
 pub use ship_projection_table::*;
@@ -111,6 +117,8 @@ impl __sdk::Reducer for Reducer {
 #[doc(hidden)]
 pub struct DbUpdate {
     location_report: __sdk::TableUpdate<LocationReport>,
+    newest_location_report_time: __sdk::TableUpdate<OldestLocationReportTime>,
+    oldest_location_report_time: __sdk::TableUpdate<OldestLocationReportTime>,
     ship: __sdk::TableUpdate<Ship>,
     ship_projection: __sdk::TableUpdate<ShipProjection>,
 }
@@ -124,6 +132,12 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "location_report" => db_update
                     .location_report
                     .append(location_report_table::parse_table_update(table_update)?),
+                "newest_location_report_time" => db_update.newest_location_report_time.append(
+                    newest_location_report_time_table::parse_table_update(table_update)?,
+                ),
+                "oldest_location_report_time" => db_update.oldest_location_report_time.append(
+                    oldest_location_report_time_table::parse_table_update(table_update)?,
+                ),
                 "ship" => db_update
                     .ship
                     .append(ship_table::parse_table_update(table_update)?),
@@ -165,6 +179,14 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.ship_projection = cache
             .apply_diff_to_table::<ShipProjection>("ship_projection", &self.ship_projection)
             .with_updates_by_pk(|row| &row.ship_id);
+        diff.newest_location_report_time = cache.apply_diff_to_table::<OldestLocationReportTime>(
+            "newest_location_report_time",
+            &self.newest_location_report_time,
+        );
+        diff.oldest_location_report_time = cache.apply_diff_to_table::<OldestLocationReportTime>(
+            "oldest_location_report_time",
+            &self.oldest_location_report_time,
+        );
 
         diff
     }
@@ -174,6 +196,12 @@ impl __sdk::DbUpdate for DbUpdate {
             match &table_rows.table[..] {
                 "location_report" => db_update
                     .location_report
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "newest_location_report_time" => db_update
+                    .newest_location_report_time
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "oldest_location_report_time" => db_update
+                    .oldest_location_report_time
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "ship" => db_update
                     .ship
@@ -197,6 +225,12 @@ impl __sdk::DbUpdate for DbUpdate {
                 "location_report" => db_update
                     .location_report
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "newest_location_report_time" => db_update
+                    .newest_location_report_time
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "oldest_location_report_time" => db_update
+                    .oldest_location_report_time
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "ship" => db_update
                     .ship
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -219,6 +253,8 @@ impl __sdk::DbUpdate for DbUpdate {
 #[doc(hidden)]
 pub struct AppliedDiff<'r> {
     location_report: __sdk::TableAppliedDiff<'r, LocationReport>,
+    newest_location_report_time: __sdk::TableAppliedDiff<'r, OldestLocationReportTime>,
+    oldest_location_report_time: __sdk::TableAppliedDiff<'r, OldestLocationReportTime>,
     ship: __sdk::TableAppliedDiff<'r, Ship>,
     ship_projection: __sdk::TableAppliedDiff<'r, ShipProjection>,
     __unused: std::marker::PhantomData<&'r ()>,
@@ -237,6 +273,16 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<LocationReport>(
             "location_report",
             &self.location_report,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<OldestLocationReportTime>(
+            "newest_location_report_time",
+            &self.newest_location_report_time,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<OldestLocationReportTime>(
+            "oldest_location_report_time",
+            &self.oldest_location_report_time,
             event,
         );
         callbacks.invoke_table_row_callbacks::<Ship>("ship", &self.ship, event);
@@ -906,9 +952,16 @@ impl __sdk::SpacetimeModule for RemoteModule {
 
     fn register_tables(client_cache: &mut __sdk::ClientCache<Self>) {
         location_report_table::register_table(client_cache);
+        newest_location_report_time_table::register_table(client_cache);
+        oldest_location_report_time_table::register_table(client_cache);
         ship_table::register_table(client_cache);
         ship_projection_table::register_table(client_cache);
     }
-    const ALL_TABLE_NAMES: &'static [&'static str] =
-        &["location_report", "ship", "ship_projection"];
+    const ALL_TABLE_NAMES: &'static [&'static str] = &[
+        "location_report",
+        "newest_location_report_time",
+        "oldest_location_report_time",
+        "ship",
+        "ship_projection",
+    ];
 }
