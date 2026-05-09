@@ -6,49 +6,46 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub(super) struct AddShipArgs {
-    pub name: String,
-    pub call_sign: Option<String>,
+pub(super) struct SetCurrentTimeArgs {
+    pub timestamp: __sdk::Timestamp,
 }
 
-impl From<AddShipArgs> for super::Reducer {
-    fn from(args: AddShipArgs) -> Self {
-        Self::AddShip {
-            name: args.name,
-            call_sign: args.call_sign,
+impl From<SetCurrentTimeArgs> for super::Reducer {
+    fn from(args: SetCurrentTimeArgs) -> Self {
+        Self::SetCurrentTime {
+            timestamp: args.timestamp,
         }
     }
 }
 
-impl __sdk::InModule for AddShipArgs {
+impl __sdk::InModule for SetCurrentTimeArgs {
     type Module = super::RemoteModule;
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the reducer `add_ship`.
+/// Extension trait for access to the reducer `set_current_time`.
 ///
 /// Implemented for [`super::RemoteReducers`].
-pub trait add_ship {
-    /// Request that the remote module invoke the reducer `add_ship` to run as soon as possible.
+pub trait set_current_time {
+    /// Request that the remote module invoke the reducer `set_current_time` to run as soon as possible.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
-    /// /// Use [`add_ship:add_ship_then`] to run a callback after the reducer completes.
-    fn add_ship(&self, name: String, call_sign: Option<String>) -> __sdk::Result<()> {
-        self.add_ship_then(name, call_sign, |_, _| {})
+    /// /// Use [`set_current_time:set_current_time_then`] to run a callback after the reducer completes.
+    fn set_current_time(&self, timestamp: __sdk::Timestamp) -> __sdk::Result<()> {
+        self.set_current_time_then(timestamp, |_, _| {})
     }
 
-    /// Request that the remote module invoke the reducer `add_ship` to run as soon as possible,
+    /// Request that the remote module invoke the reducer `set_current_time` to run as soon as possible,
     /// registering `callback` to run when we are notified that the reducer completed.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed with the `callback`.
-    fn add_ship_then(
+    fn set_current_time_then(
         &self,
-        name: String,
-        call_sign: Option<String>,
+        timestamp: __sdk::Timestamp,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
@@ -56,17 +53,16 @@ pub trait add_ship {
     ) -> __sdk::Result<()>;
 }
 
-impl add_ship for super::RemoteReducers {
-    fn add_ship_then(
+impl set_current_time for super::RemoteReducers {
+    fn set_current_time_then(
         &self,
-        name: String,
-        call_sign: Option<String>,
+        timestamp: __sdk::Timestamp,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
         self.imp
-            .invoke_reducer_with_callback(AddShipArgs { name, call_sign }, callback)
+            .invoke_reducer_with_callback(SetCurrentTimeArgs { timestamp }, callback)
     }
 }

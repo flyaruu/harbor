@@ -9,6 +9,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 pub struct Ship {
     pub id: u64,
     pub name: String,
+    pub call_sign: Option<String>,
 }
 
 impl __sdk::InModule for Ship {
@@ -21,6 +22,7 @@ impl __sdk::InModule for Ship {
 pub struct ShipCols {
     pub id: __sdk::__query_builder::Col<Ship, u64>,
     pub name: __sdk::__query_builder::Col<Ship, String>,
+    pub call_sign: __sdk::__query_builder::Col<Ship, Option<String>>,
 }
 
 impl __sdk::__query_builder::HasCols for Ship {
@@ -29,6 +31,7 @@ impl __sdk::__query_builder::HasCols for Ship {
         ShipCols {
             id: __sdk::__query_builder::Col::new(table_name, "id"),
             name: __sdk::__query_builder::Col::new(table_name, "name"),
+            call_sign: __sdk::__query_builder::Col::new(table_name, "call_sign"),
         }
     }
 }

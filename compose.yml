@@ -1,0 +1,13 @@
+services:
+  spacetimedb:
+    image: clockworklabs/spacetime
+    container_name: spacetimedb
+    command: start
+    ports:
+      - "3000:3000"
+    volumes:
+      - spacetimedb-data:/root/.local/share/spacetime/data
+    restart: unless-stopped
+
+volumes:
+  spacetimedb-data:

@@ -1,4 +1,4 @@
 [workspace]
-members = ["location-source"]
+members = ["location-source", "location-viewer"]
 exclude = ["spacetimedb"]
 resolver = "2"

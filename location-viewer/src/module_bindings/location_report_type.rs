@@ -11,7 +11,8 @@ pub struct LocationReport {
     pub ship_id: u64,
     pub lat: f64,
     pub lon: f64,
-    pub heading: f64,
+    pub cog: Option<f64>,
+    pub sog: Option<f64>,
     pub timestamp: __sdk::Timestamp,
 }
 
@@ -27,7 +28,8 @@ pub struct LocationReportCols {
     pub ship_id: __sdk::__query_builder::Col<LocationReport, u64>,
     pub lat: __sdk::__query_builder::Col<LocationReport, f64>,
     pub lon: __sdk::__query_builder::Col<LocationReport, f64>,
-    pub heading: __sdk::__query_builder::Col<LocationReport, f64>,
+    pub cog: __sdk::__query_builder::Col<LocationReport, Option<f64>>,
+    pub sog: __sdk::__query_builder::Col<LocationReport, Option<f64>>,
     pub timestamp: __sdk::__query_builder::Col<LocationReport, __sdk::Timestamp>,
 }
 
@@ -39,7 +41,8 @@ impl __sdk::__query_builder::HasCols for LocationReport {
             ship_id: __sdk::__query_builder::Col::new(table_name, "ship_id"),
             lat: __sdk::__query_builder::Col::new(table_name, "lat"),
             lon: __sdk::__query_builder::Col::new(table_name, "lon"),
-            heading: __sdk::__query_builder::Col::new(table_name, "heading"),
+            cog: __sdk::__query_builder::Col::new(table_name, "cog"),
+            sog: __sdk::__query_builder::Col::new(table_name, "sog"),
             timestamp: __sdk::__query_builder::Col::new(table_name, "timestamp"),
         }
     }
@@ -51,6 +54,7 @@ impl __sdk::__query_builder::HasCols for LocationReport {
 pub struct LocationReportIxCols {
     pub id: __sdk::__query_builder::IxCol<LocationReport, u64>,
     pub ship_id: __sdk::__query_builder::IxCol<LocationReport, u64>,
+    pub timestamp: __sdk::__query_builder::IxCol<LocationReport, __sdk::Timestamp>,
 }
 
 impl __sdk::__query_builder::HasIxCols for LocationReport {
@@ -59,6 +63,7 @@ impl __sdk::__query_builder::HasIxCols for LocationReport {
         LocationReportIxCols {
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
             ship_id: __sdk::__query_builder::IxCol::new(table_name, "ship_id"),
+            timestamp: __sdk::__query_builder::IxCol::new(table_name, "timestamp"),
         }
     }
 }

@@ -1,0 +1,37 @@
+{
+  "Message": {
+    "StandardClassBPositionReport": {
+      "AssignedMode": false,
+      "ClassBBand": true,
+      "ClassBDisplay": false,
+      "ClassBDsc": true,
+      "ClassBMsg22": true,
+      "ClassBUnit": true,
+      "Cog": 224.3,
+      "CommunicationState": 393222,
+      "CommunicationStateIsItdma": true,
+      "Latitude": 51.82384166666667,
+      "Longitude": 4.121341666666667,
+      "MessageID": 18,
+      "PositionAccuracy": true,
+      "Raim": true,
+      "RepeatIndicator": 0,
+      "Sog": 0,
+      "Spare1": 0,
+      "Spare2": 0,
+      "Timestamp": 39,
+      "TrueHeading": 511,
+      "UserID": 244620651,
+      "Valid": true
+    }
+  },
+  "MessageType": "StandardClassBPositionReport",
+  "MetaData": {
+    "MMSI": 244620651,
+    "MMSI_String": 244620651,
+    "ShipName": "PESCADOR",
+    "latitude": 51.82384,
+    "longitude": 4.12134,
+    "time_utc": "2026-05-06 15:20:39.725521351 +0000 UTC"
+  }
+}

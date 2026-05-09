@@ -1,0 +1,14 @@
+{
+  "Message": {
+    "UnknownMessage": {}
+  },
+  "MessageType": "UnknownMessage",
+  "MetaData": {
+    "MMSI": 205567490,
+    "MMSI_String": 205567490,
+    "ShipName": "POROS",
+    "latitude": 51.96681,
+    "longitude": 4.04324,
+    "time_utc": "2026-05-06 15:20:39.739208636 +0000 UTC"
+  }
+}

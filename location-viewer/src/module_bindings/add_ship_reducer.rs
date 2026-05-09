@@ -8,11 +8,15 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[sats(crate = __lib)]
 pub(super) struct AddShipArgs {
     pub name: String,
+    pub call_sign: Option<String>,
 }
 
 impl From<AddShipArgs> for super::Reducer {
     fn from(args: AddShipArgs) -> Self {
-        Self::AddShip { name: args.name }
+        Self::AddShip {
+            name: args.name,
+            call_sign: args.call_sign,
+        }
     }
 }
 
@@ -31,8 +35,8 @@ pub trait add_ship {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`add_ship:add_ship_then`] to run a callback after the reducer completes.
-    fn add_ship(&self, name: String) -> __sdk::Result<()> {
-        self.add_ship_then(name, |_, _| {})
+    fn add_ship(&self, name: String, call_sign: Option<String>) -> __sdk::Result<()> {
+        self.add_ship_then(name, call_sign, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `add_ship` to run as soon as possible,
@@ -44,6 +48,7 @@ pub trait add_ship {
     fn add_ship_then(
         &self,
         name: String,
+        call_sign: Option<String>,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
@@ -55,12 +60,13 @@ impl add_ship for super::RemoteReducers {
     fn add_ship_then(
         &self,
         name: String,
+        call_sign: Option<String>,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
         self.imp
-            .invoke_reducer_with_callback(AddShipArgs { name }, callback)
+            .invoke_reducer_with_callback(AddShipArgs { name, call_sign }, callback)
     }
 }

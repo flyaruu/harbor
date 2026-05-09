@@ -6,52 +6,46 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub(super) struct AddLocationReportArgs {
-    pub ship_id: u64,
-    pub lat: f64,
-    pub lon: f64,
+pub(super) struct SetCurrentTimeArgs {
+    pub timestamp: __sdk::Timestamp,
 }
 
-impl From<AddLocationReportArgs> for super::Reducer {
-    fn from(args: AddLocationReportArgs) -> Self {
-        Self::AddLocationReport {
-            ship_id: args.ship_id,
-            lat: args.lat,
-            lon: args.lon,
+impl From<SetCurrentTimeArgs> for super::Reducer {
+    fn from(args: SetCurrentTimeArgs) -> Self {
+        Self::SetCurrentTime {
+            timestamp: args.timestamp,
         }
     }
 }
 
-impl __sdk::InModule for AddLocationReportArgs {
+impl __sdk::InModule for SetCurrentTimeArgs {
     type Module = super::RemoteModule;
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the reducer `add_location_report`.
+/// Extension trait for access to the reducer `set_current_time`.
 ///
 /// Implemented for [`super::RemoteReducers`].
-pub trait add_location_report {
-    /// Request that the remote module invoke the reducer `add_location_report` to run as soon as possible.
+pub trait set_current_time {
+    /// Request that the remote module invoke the reducer `set_current_time` to run as soon as possible.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
-    /// /// Use [`add_location_report:add_location_report_then`] to run a callback after the reducer completes.
-    fn add_location_report(&self, ship_id: u64, lat: f64, lon: f64) -> __sdk::Result<()> {
-        self.add_location_report_then(ship_id, lat, lon, |_, _| {})
+    /// /// Use [`set_current_time:set_current_time_then`] to run a callback after the reducer completes.
+    fn set_current_time(&self, timestamp: __sdk::Timestamp) -> __sdk::Result<()> {
+        self.set_current_time_then(timestamp, |_, _| {})
     }
 
-    /// Request that the remote module invoke the reducer `add_location_report` to run as soon as possible,
+    /// Request that the remote module invoke the reducer `set_current_time` to run as soon as possible,
     /// registering `callback` to run when we are notified that the reducer completed.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed with the `callback`.
-    fn add_location_report_then(
+    fn set_current_time_then(
         &self,
-        ship_id: u64,
-        lat: f64,
-        lon: f64,
+        timestamp: __sdk::Timestamp,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
@@ -59,18 +53,16 @@ pub trait add_location_report {
     ) -> __sdk::Result<()>;
 }
 
-impl add_location_report for super::RemoteReducers {
-    fn add_location_report_then(
+impl set_current_time for super::RemoteReducers {
+    fn set_current_time_then(
         &self,
-        ship_id: u64,
-        lat: f64,
-        lon: f64,
+        timestamp: __sdk::Timestamp,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
         self.imp
-            .invoke_reducer_with_callback(AddLocationReportArgs { ship_id, lat, lon }, callback)
+            .invoke_reducer_with_callback(SetCurrentTimeArgs { timestamp }, callback)
     }
 }

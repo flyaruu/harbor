@@ -1,0 +1,41 @@
+{
+  "Message": {
+    "ShipStaticData": {
+      "AisVersion": 1,
+      "CallSign": "PG6371",
+      "Destination": "KRIMPEN AAN DEN IJSS",
+      "Dimension": {
+        "A": 19,
+        "B": 13,
+        "C": 5,
+        "D": 1
+      },
+      "Dte": true,
+      "Eta": {
+        "Day": 25,
+        "Hour": 0,
+        "Minute": 0,
+        "Month": 7
+      },
+      "FixType": 15,
+      "ImoNumber": 0,
+      "MaximumStaticDraught": 0.2,
+      "MessageID": 5,
+      "Name": "SINCFAL",
+      "RepeatIndicator": 0,
+      "Spare": false,
+      "Type": 0,
+      "UserID": 244740748,
+      "Valid": true
+    }
+  },
+  "MessageType": "ShipStaticData",
+  "MetaData": {
+    "MMSI": 244740748,
+    "MMSI_String": 244740748,
+    "ShipName": "SINCFAL",
+    "latitude": 51.89945,
+    "longitude": 4.59655,
+    "time_utc": "2026-05-06 15:20:39.743536746 +0000 UTC"
+  }
+}

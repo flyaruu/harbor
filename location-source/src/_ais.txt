@@ -1,0 +1,445 @@
+use std::error::Error;
+use std::{collections::BTreeMap, fmt};
+
+use http::Uri;
+use serde::{Deserialize, Deserializer, Serialize, Serializer, de::DeserializeOwned};
+use serde_json::Value;
+use tungstenite::Bytes;
+
+use crate::module_bindings::{DbConnection, add_location_report, add_ship};
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct AisStreamMessage {
+    #[serde(rename = "Message")]
+    pub message: BTreeMap<String, Value>,
+    #[serde(rename = "MessageType")]
+    pub message_type: AisMessageType,
+    #[serde(rename = "MetaData")]
+    pub metadata: AisMetadata,
+}
+
+impl AisStreamMessage {
+    pub fn body_as<T>(&self) -> Result<Option<T>, serde_json::Error>
+    where
+        T: DeserializeOwned,
+    {
+        self.message
+            .get(self.message_type.as_str())
+            .cloned()
+            .map(serde_json::from_value)
+            .transpose()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AisMessageType {
+    UnknownMessage,
+    ShipStaticData,
+    StandardClassBPositionReport,
+    PositionReport,
+    Other(String),
+}
+
+impl AisMessageType {
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::UnknownMessage => "UnknownMessage",
+            Self::ShipStaticData => "ShipStaticData",
+            Self::StandardClassBPositionReport => "StandardClassBPositionReport",
+            Self::PositionReport => "PositionReport",
+            Self::Other(value) => value.as_str(),
+        }
+    }
+}
+
+impl Serialize for AisMessageType {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for AisMessageType {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+
+        Ok(match value.as_str() {
+            "UnknownMessage" => Self::UnknownMessage,
+            "ShipStaticData" => Self::ShipStaticData,
+            "StandardClassBPositionReport" => Self::StandardClassBPositionReport,
+            "PositionReport" => Self::PositionReport,
+            _ => Self::Other(value),
+        })
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct AisMetadata {
+    #[serde(rename = "MMSI")]
+    pub mmsi: u64,
+    #[serde(rename = "MMSI_String")]
+    pub mmsi_string: u64,
+    #[serde(rename = "ShipName")]
+    pub ship_name: String,
+    pub latitude: f64,
+    pub longitude: f64,
+    pub time_utc: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct UnknownMessage {}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct ShipStaticData {
+    #[serde(rename = "AisVersion")]
+    pub ais_version: u8,
+    #[serde(rename = "CallSign")]
+    pub call_sign: String,
+    #[serde(rename = "Destination")]
+    pub destination: String,
+    #[serde(rename = "Dimension")]
+    pub dimension: ShipDimensions,
+    #[serde(rename = "Dte")]
+    pub dte: bool,
+    #[serde(rename = "Eta")]
+    pub eta: Eta,
+    #[serde(rename = "FixType")]
+    pub fix_type: u8,
+    #[serde(rename = "ImoNumber")]
+    pub imo_number: u32,
+    #[serde(rename = "MaximumStaticDraught")]
+    pub maximum_static_draught: f64,
+    #[serde(rename = "MessageID")]
+    pub message_id: u8,
+    #[serde(rename = "Name")]
+    pub name: String,
+    #[serde(rename = "RepeatIndicator")]
+    pub repeat_indicator: u8,
+    #[serde(rename = "Spare")]
+    pub spare: bool,
+    #[serde(rename = "Type")]
+    pub ship_type: u8,
+    #[serde(rename = "UserID")]
+    pub user_id: u64,
+    #[serde(rename = "Valid")]
+    pub valid: bool,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct ShipDimensions {
+    #[serde(rename = "A")]
+    pub a: u16,
+    #[serde(rename = "B")]
+    pub b: u16,
+    #[serde(rename = "C")]
+    pub c: u16,
+    #[serde(rename = "D")]
+    pub d: u16,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct Eta {
+    #[serde(rename = "Day")]
+    pub day: u8,
+    #[serde(rename = "Hour")]
+    pub hour: u8,
+    #[serde(rename = "Minute")]
+    pub minute: u8,
+    #[serde(rename = "Month")]
+    pub month: u8,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct StandardClassBPositionReport {
+    #[serde(rename = "AssignedMode")]
+    pub assigned_mode: bool,
+    #[serde(rename = "ClassBBand")]
+    pub class_b_band: bool,
+    #[serde(rename = "ClassBDisplay")]
+    pub class_b_display: bool,
+    #[serde(rename = "ClassBDsc")]
+    pub class_b_dsc: bool,
+    #[serde(rename = "ClassBMsg22")]
+    pub class_b_msg22: bool,
+    #[serde(rename = "ClassBUnit")]
+    pub class_b_unit: bool,
+    #[serde(rename = "Cog")]
+    pub cog: f64,
+    #[serde(rename = "CommunicationState")]
+    pub communication_state: u32,
+    #[serde(rename = "CommunicationStateIsItdma")]
+    pub communication_state_is_itdma: bool,
+    #[serde(rename = "Latitude")]
+    pub latitude: f64,
+    #[serde(rename = "Longitude")]
+    pub longitude: f64,
+    #[serde(rename = "MessageID")]
+    pub message_id: u8,
+    #[serde(rename = "PositionAccuracy")]
+    pub position_accuracy: bool,
+    #[serde(rename = "Raim")]
+    pub raim: bool,
+    #[serde(rename = "RepeatIndicator")]
+    pub repeat_indicator: u8,
+    #[serde(rename = "Sog")]
+    pub sog: f64,
+    #[serde(rename = "Spare1")]
+    pub spare1: u8,
+    #[serde(rename = "Spare2")]
+    pub spare2: u8,
+    #[serde(rename = "Timestamp")]
+    pub timestamp: u8,
+    #[serde(rename = "TrueHeading")]
+    pub true_heading: u16,
+    #[serde(rename = "UserID")]
+    pub user_id: u64,
+    #[serde(rename = "Valid")]
+    pub valid: bool,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct PositionReport {
+    #[serde(rename = "Cog")]
+    pub cog: f64,
+    #[serde(rename = "CommunicationState")]
+    pub communication_state: u32,
+    #[serde(rename = "Latitude")]
+    pub latitude: f64,
+    #[serde(rename = "Longitude")]
+    pub longitude: f64,
+    #[serde(rename = "MessageID")]
+    pub message_id: u8,
+    #[serde(rename = "NavigationalStatus")]
+    pub navigational_status: u8,
+    #[serde(rename = "PositionAccuracy")]
+    pub position_accuracy: bool,
+    #[serde(rename = "Raim")]
+    pub raim: bool,
+    #[serde(rename = "RateOfTurn")]
+    pub rate_of_turn: i16,
+    #[serde(rename = "RepeatIndicator")]
+    pub repeat_indicator: u8,
+    #[serde(rename = "Sog")]
+    pub sog: f64,
+    #[serde(rename = "Spare")]
+    pub spare: u8,
+    #[serde(rename = "SpecialManoeuvreIndicator")]
+    pub special_manoeuvre_indicator: u8,
+    #[serde(rename = "Timestamp")]
+    pub timestamp: u8,
+    #[serde(rename = "TrueHeading")]
+    pub true_heading: u16,
+    #[serde(rename = "UserID")]
+    pub user_id: u64,
+    #[serde(rename = "Valid")]
+    pub valid: bool,
+}
+
+pub(crate) fn run_ais(_conn: DbConnection) -> Result<(), Box<dyn Error>> {
+    // Aisstream
+    let aisstream_api_url: Uri = Uri::from_static("wss://stream.aisstream.io/v0/stream");
+    let aisstream_api_key: String = std::env::var("AISSTREAM_API_KEY").unwrap_or("401620aea8c9f66129af3d8b1caec95a86144a61".to_owned());
+
+    // WebSocket
+    println!("Connecting `{aisstream_api_url}`");
+    let (mut socket, _) = tungstenite::connect(aisstream_api_url)?;
+
+    let auth_request = AuthRequest {
+        api_key: aisstream_api_key.clone(),
+        bounding_boxes: vec![[[51.809685,3.931732], [52.041860, 4.619751]]],
+    };
+
+        // bounding_boxes: vec![[[3.931732, 51.809685], [4.619751, 52.041860]]],
+
+
+    let auth_request_bytes = Bytes::copy_from_slice(&serde_json::to_vec(&auth_request)?);
+
+    // let message = serde_json::json!({
+    //         "APIKey": aisstream_api_key,
+    //         "BoundingBoxes": [[[-180, -90], [180, 90]]]
+    //     });
+
+    // Authentication
+    println!("Authenticating...");
+    socket.send(tungstenite::Message::Binary(
+        auth_request_bytes
+    ))?;
+    let message = match socket.read()? {
+        tungstenite::Message::Binary(message) => {
+            println!("Received authentication response: {:?}", message);
+            match serde_json::from_slice::<AuthMessage>(&message)? {
+                AuthMessage::AuthError(message) => {
+                    return Err(format!("Authentication error: {message:?}").into());
+                }
+                AuthMessage::Message(message) => Some(message),
+            }
+        }
+        _ => None,
+    };
+    println!("Successfully authenticated");
+    if let Some(message) = message {
+        print_message(&message);
+    }
+
+    // Loop
+    loop {
+        println!("Waiting for messages...");
+        let message = match socket.read()? {
+            tungstenite::Message::Binary(message) => {
+                serde_json::from_slice::<AisStreamMessage>(&message)?
+            }
+            tungstenite::Message::Close(message) => {
+                return Err(format!("Connection closed: {message:?}").into());
+            }
+            _ => continue,
+        };
+        print_message(&message);
+    }
+}
+
+fn print_message(message: &AisStreamMessage) {
+    match &message.message_type {
+        AisMessageType::PositionReport => {
+            if let Ok(Some(report)) = message.body_as::<PositionReport>() {
+                            add_location_report(
+                &DbConnection::current().expect("No database connection available"),
+                message.metadata.mmsi,
+                message.metadata.latitude,
+                message.metadata.longitude,
+                Some(report.cog),
+                Some(report.sog),
+            ).unwrap_or_else(|e| eprintln!("Error adding location report: {e}"));
+
+                println!(
+                    "{} position: lat={}, lon={}, sog={}, cog={}",
+                    message.metadata.ship_name,
+                    report.latitude,
+                    report.longitude,
+                    report.sog,
+                    report.cog
+                );
+            }
+        }
+        AisMessageType::StandardClassBPositionReport => {
+            if let Ok(Some(report)) = message.body_as::<StandardClassBPositionReport>() {
+                add_location_report(
+                    &DbConnection::current().expect("No database connection available"),
+                    message.metadata.mmsi,
+                    message.metadata.latitude,
+                    message.metadata.longitude,
+                    Some(report.cog),
+                    Some(report.sog),
+                ).unwrap_or_else(|e| eprintln!("Error adding location report: {e}"));
+
+                println!(
+                    "{} class B position: lat={}, lon={}, cog={}, sog={}",
+                    message.metadata.ship_name,
+                    report.latitude,
+                    report.longitude,
+                    report.cog,
+                    report.sog
+                );
+            }
+        }
+        AisMessageType::ShipStaticData => {
+            if let Ok(Some(report)) = message.body_as::<ShipStaticData>() {
+                add_ship(
+                    &DbConnection::current().expect("No database connection available"),
+                    report.name.clone(),
+                    Some(report.call_sign.clone()),
+                ).unwrap_or_else(|e| eprintln!("Error adding ship: {e}"));
+                println!(
+                    "{} static data: callsign={}, destination={}",
+                    report.name, report.call_sign, report.destination
+                );
+            }
+        }
+        AisMessageType::UnknownMessage => {
+            let _ = message.body_as::<UnknownMessage>();
+            println!("{} unknown AIS message", message.metadata.ship_name);
+        }
+        AisMessageType::Other(_) => {}
+    }
+
+    let pretty_message = serde_json::to_string_pretty(message).unwrap_or_else(|_| "Failed to serialize message".to_string());
+    println!("{pretty_message}");
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct AuthRequest {
+    #[serde(rename = "APIKey")]
+    pub api_key: String,
+    #[serde(rename = "BoundingBoxes")]
+    pub bounding_boxes: Vec<[[f64; 2]; 2]>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(untagged)]
+pub enum AuthMessage {
+    AuthError(AuthError),
+    Message(AisStreamMessage),
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct AuthError {
+    pub error: String,
+}
+
+impl fmt::Display for AuthError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.error.fmt(f)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_unknown_message() {
+        let message: AisStreamMessage = serde_json::from_str(include_str!("../message1.json")).unwrap();
+
+        assert_eq!(message.message_type, AisMessageType::UnknownMessage);
+        let body: UnknownMessage = message.body_as().unwrap().unwrap();
+        let _ = body;
+        assert_eq!(message.metadata.ship_name, "POROS");
+    }
+
+    #[test]
+    fn parses_ship_static_data() {
+        let message: AisStreamMessage = serde_json::from_str(include_str!("../message2.json")).unwrap();
+
+        assert_eq!(message.message_type, AisMessageType::ShipStaticData);
+        let body: ShipStaticData = message.body_as().unwrap().unwrap();
+        assert_eq!(body.name, "SINCFAL");
+        assert_eq!(body.user_id, 244740748);
+    }
+
+    #[test]
+    fn parses_standard_class_b_position_report() {
+        let message: AisStreamMessage = serde_json::from_str(include_str!("../message3.json")).unwrap();
+
+        assert_eq!(
+            message.message_type,
+            AisMessageType::StandardClassBPositionReport
+        );
+        let body: StandardClassBPositionReport = message.body_as().unwrap().unwrap();
+        assert_eq!(body.user_id, 244620651);
+        assert!(body.position_accuracy);
+    }
+
+    #[test]
+    fn parses_position_report() {
+        let message: AisStreamMessage = serde_json::from_str(include_str!("../message4.json")).unwrap();
+
+        assert_eq!(message.message_type, AisMessageType::PositionReport);
+        let body: PositionReport = message.body_as().unwrap().unwrap();
+        assert_eq!(body.user_id, 245444000);
+        assert_eq!(body.longitude, 4.148315);
+    }
+}

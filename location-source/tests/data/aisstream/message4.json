@@ -1,0 +1,32 @@
+{
+  "Message": {
+    "PositionReport": {
+      "Cog": 20,
+      "CommunicationState": 49556,
+      "Latitude": 51.94936,
+      "Longitude": 4.148315,
+      "MessageID": 1,
+      "NavigationalStatus": 0,
+      "PositionAccuracy": true,
+      "Raim": true,
+      "RateOfTurn": -128,
+      "RepeatIndicator": 0,
+      "Sog": 0,
+      "Spare": 0,
+      "SpecialManoeuvreIndicator": 0,
+      "Timestamp": 39,
+      "TrueHeading": 511,
+      "UserID": 245444000,
+      "Valid": true
+    }
+  },
+  "MessageType": "PositionReport",
+  "MetaData": {
+    "MMSI": 245444000,
+    "MMSI_String": 245444000,
+    "ShipName": "KRVE 87",
+    "latitude": 51.94936,
+    "longitude": 4.14832,
+    "time_utc": "2026-05-06 15:20:39.686712348 +0000 UTC"
+  }
+}

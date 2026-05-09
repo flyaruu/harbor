@@ -5,42 +5,42 @@
 use super::location_report_type::LocationReport;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-/// Table handle for the table `location_reporter`.
+/// Table handle for the table `location_report`.
 ///
-/// Obtain a handle from the [`LocationReporterTableAccess::location_reporter`] method on [`super::RemoteTables`],
-/// like `ctx.db.location_reporter()`.
+/// Obtain a handle from the [`LocationReportTableAccess::location_report`] method on [`super::RemoteTables`],
+/// like `ctx.db.location_report()`.
 ///
 /// Users are encouraged not to explicitly reference this type,
 /// but to directly chain method calls,
-/// like `ctx.db.location_reporter().on_insert(...)`.
-pub struct LocationReporterTableHandle<'ctx> {
+/// like `ctx.db.location_report().on_insert(...)`.
+pub struct LocationReportTableHandle<'ctx> {
     imp: __sdk::TableHandle<LocationReport>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `location_reporter`.
+/// Extension trait for access to the table `location_report`.
 ///
 /// Implemented for [`super::RemoteTables`].
-pub trait LocationReporterTableAccess {
+pub trait LocationReportTableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`LocationReporterTableHandle`], which mediates access to the table `location_reporter`.
-    fn location_reporter(&self) -> LocationReporterTableHandle<'_>;
+    /// Obtain a [`LocationReportTableHandle`], which mediates access to the table `location_report`.
+    fn location_report(&self) -> LocationReportTableHandle<'_>;
 }
 
-impl LocationReporterTableAccess for super::RemoteTables {
-    fn location_reporter(&self) -> LocationReporterTableHandle<'_> {
-        LocationReporterTableHandle {
-            imp: self.imp.get_table::<LocationReport>("location_reporter"),
+impl LocationReportTableAccess for super::RemoteTables {
+    fn location_report(&self) -> LocationReportTableHandle<'_> {
+        LocationReportTableHandle {
+            imp: self.imp.get_table::<LocationReport>("location_report"),
             ctx: std::marker::PhantomData,
         }
     }
 }
 
-pub struct LocationReporterInsertCallbackId(__sdk::CallbackId);
-pub struct LocationReporterDeleteCallbackId(__sdk::CallbackId);
+pub struct LocationReportInsertCallbackId(__sdk::CallbackId);
+pub struct LocationReportDeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::Table for LocationReporterTableHandle<'ctx> {
+impl<'ctx> __sdk::Table for LocationReportTableHandle<'ctx> {
     type Row = LocationReport;
     type EventContext = super::EventContext;
 
@@ -51,73 +51,73 @@ impl<'ctx> __sdk::Table for LocationReporterTableHandle<'ctx> {
         self.imp.iter()
     }
 
-    type InsertCallbackId = LocationReporterInsertCallbackId;
+    type InsertCallbackId = LocationReportInsertCallbackId;
 
     fn on_insert(
         &self,
         callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
-    ) -> LocationReporterInsertCallbackId {
-        LocationReporterInsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    ) -> LocationReportInsertCallbackId {
+        LocationReportInsertCallbackId(self.imp.on_insert(Box::new(callback)))
     }
 
-    fn remove_on_insert(&self, callback: LocationReporterInsertCallbackId) {
+    fn remove_on_insert(&self, callback: LocationReportInsertCallbackId) {
         self.imp.remove_on_insert(callback.0)
     }
 
-    type DeleteCallbackId = LocationReporterDeleteCallbackId;
+    type DeleteCallbackId = LocationReportDeleteCallbackId;
 
     fn on_delete(
         &self,
         callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
-    ) -> LocationReporterDeleteCallbackId {
-        LocationReporterDeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    ) -> LocationReportDeleteCallbackId {
+        LocationReportDeleteCallbackId(self.imp.on_delete(Box::new(callback)))
     }
 
-    fn remove_on_delete(&self, callback: LocationReporterDeleteCallbackId) {
+    fn remove_on_delete(&self, callback: LocationReportDeleteCallbackId) {
         self.imp.remove_on_delete(callback.0)
     }
 }
 
-pub struct LocationReporterUpdateCallbackId(__sdk::CallbackId);
+pub struct LocationReportUpdateCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::TableWithPrimaryKey for LocationReporterTableHandle<'ctx> {
-    type UpdateCallbackId = LocationReporterUpdateCallbackId;
+impl<'ctx> __sdk::TableWithPrimaryKey for LocationReportTableHandle<'ctx> {
+    type UpdateCallbackId = LocationReportUpdateCallbackId;
 
     fn on_update(
         &self,
         callback: impl FnMut(&Self::EventContext, &Self::Row, &Self::Row) + Send + 'static,
-    ) -> LocationReporterUpdateCallbackId {
-        LocationReporterUpdateCallbackId(self.imp.on_update(Box::new(callback)))
+    ) -> LocationReportUpdateCallbackId {
+        LocationReportUpdateCallbackId(self.imp.on_update(Box::new(callback)))
     }
 
-    fn remove_on_update(&self, callback: LocationReporterUpdateCallbackId) {
+    fn remove_on_update(&self, callback: LocationReportUpdateCallbackId) {
         self.imp.remove_on_update(callback.0)
     }
 }
 
-/// Access to the `id` unique index on the table `location_reporter`,
+/// Access to the `id` unique index on the table `location_report`,
 /// which allows point queries on the field of the same name
-/// via the [`LocationReporterIdUnique::find`] method.
+/// via the [`LocationReportIdUnique::find`] method.
 ///
 /// Users are encouraged not to explicitly reference this type,
 /// but to directly chain method calls,
-/// like `ctx.db.location_reporter().id().find(...)`.
-pub struct LocationReporterIdUnique<'ctx> {
+/// like `ctx.db.location_report().id().find(...)`.
+pub struct LocationReportIdUnique<'ctx> {
     imp: __sdk::UniqueConstraintHandle<LocationReport, u64>,
     phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
-impl<'ctx> LocationReporterTableHandle<'ctx> {
-    /// Get a handle on the `id` unique index on the table `location_reporter`.
-    pub fn id(&self) -> LocationReporterIdUnique<'ctx> {
-        LocationReporterIdUnique {
+impl<'ctx> LocationReportTableHandle<'ctx> {
+    /// Get a handle on the `id` unique index on the table `location_report`.
+    pub fn id(&self) -> LocationReportIdUnique<'ctx> {
+        LocationReportIdUnique {
             imp: self.imp.get_unique_constraint::<u64>("id"),
             phantom: std::marker::PhantomData,
         }
     }
 }
 
-impl<'ctx> LocationReporterIdUnique<'ctx> {
+impl<'ctx> LocationReportIdUnique<'ctx> {
     /// Find the subscribed row whose `id` column value is equal to `col_val`,
     /// if such a row is present in the client cache.
     pub fn find(&self, col_val: &u64) -> Option<LocationReport> {
@@ -127,7 +127,7 @@ impl<'ctx> LocationReporterIdUnique<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<LocationReport>("location_reporter");
+    let _table = client_cache.get_or_make_table::<LocationReport>("location_report");
     _table.add_unique_constraint::<u64>("id", |row| &row.id);
 }
 
@@ -146,14 +146,14 @@ pub(super) fn parse_table_update(
 /// Extension trait for query builder access to the table `LocationReport`.
 ///
 /// Implemented for [`__sdk::QueryTableAccessor`].
-pub trait location_reporterQueryTableAccess {
+pub trait location_reportQueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `LocationReport`.
-    fn location_reporter(&self) -> __sdk::__query_builder::Table<LocationReport>;
+    fn location_report(&self) -> __sdk::__query_builder::Table<LocationReport>;
 }
 
-impl location_reporterQueryTableAccess for __sdk::QueryTableAccessor {
-    fn location_reporter(&self) -> __sdk::__query_builder::Table<LocationReport> {
-        __sdk::__query_builder::Table::new("location_reporter")
+impl location_reportQueryTableAccess for __sdk::QueryTableAccessor {
+    fn location_report(&self) -> __sdk::__query_builder::Table<LocationReport> {
+        __sdk::__query_builder::Table::new("location_report")
     }
 }
