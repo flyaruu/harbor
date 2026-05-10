@@ -3,24 +3,10 @@ use module_bindings::*;
 use std::env;
 use std::time::Duration;
 
-use spacetimedb_sdk::{DbContext, Table, TableWithPrimaryKey, Timestamp};
+use spacetimedb_sdk::{DbContext, Table, Timestamp};
 
 const PROJECTION_TIMESTAMP_RFC3339: &str = "2026-05-08T11:08:29Z";
-
-fn print_ship_projection(ctx: &EventContext, projection: &ShipProjection) {
-    let ship_name = ctx
-        .db()
-        .ship()
-        .id()
-        .find(&projection.ship_id)
-        .map(|ship| ship.name)
-        .unwrap_or_else(|| format!("ship-{}", projection.ship_id));
-
-    println!(
-        "{} projected lat={}, lon={} dead_reckoning={}",
-        ship_name, projection.lat, projection.lon, projection.used_dead_reckoning
-    );
-}
+const PROJECTION_VISIBILITY_WINDOW_MICROS: i64 = 5 * 60 * 1_000_000;
 
 fn projection_timestamp() -> Timestamp {
     Timestamp::parse_from_rfc3339(PROJECTION_TIMESTAMP_RFC3339)
@@ -41,7 +27,10 @@ fn main() {
         .on_connect(|conn, _, _| {
             println!("Connected to SpacetimeDB");
 
-            if let Err(err) = conn.reducers.project_ship_locations(projection_timestamp()) {
+            if let Err(err) = conn
+                .reducers
+                .project_ship_locations(projection_timestamp(), PROJECTION_VISIBILITY_WINDOW_MICROS)
+            {
                 eprintln!("Failed to request ship projection: {err}");
             }
         })
@@ -58,24 +47,11 @@ fn main() {
         .on_applied(|ctx| {
             println!("Subscribed to ship and ship_projection tables");
 
-            for ship in ctx.db().ship().iter() {
-                println!("Ship: {} ({})", ship.name, ship.id);
-            }
-
-            for projection in ctx.db().ship_projection().iter() {
-                let ship_name = ctx
-                    .db()
-                    .ship()
-                    .id()
-                    .find(&projection.ship_id)
-                    .map(|ship| ship.name)
-                    .unwrap_or_else(|| format!("ship-{}", projection.ship_id));
-
-                println!(
-                    "Existing projection for {}: lat={}, lon={} dead_reckoning={}",
-                    ship_name, projection.lat, projection.lon, projection.used_dead_reckoning
-                );
-            }
+            println!(
+                "Cached {} ships and {} projections",
+                ctx.db().ship().iter().count(),
+                ctx.db().ship_projection().iter().count()
+            );
         })
         .on_error(|_ctx, e| eprintln!("There was an error when subscribing: {e}"))
         .add_query(|q| q.from.ship())
@@ -83,15 +59,7 @@ fn main() {
         .subscribe();
 
     conn.db().ship().on_insert(|_ctx, ship| {
-        println!("New ship: {} ({})", ship.name, ship.id);
-    });
-
-    conn.db().ship_projection().on_insert(|ctx, projection| {
-        print_ship_projection(ctx, &projection);
-    });
-
-    conn.db().ship_projection().on_update(|ctx, _old, projection| {
-        print_ship_projection(ctx, &projection);
+        println!("New ship: {} ({})", ship.name, ship.mmsi);
     });
     loop {
         std::thread::sleep(Duration::from_secs(1));

@@ -8,7 +8,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[sats(crate = __lib)]
 pub struct LocationReport {
     pub id: u64,
-    pub ship_id: u64,
+    pub ship_mmsi: u64,
     pub lat: f64,
     pub lon: f64,
     pub cog: Option<f64>,
@@ -25,7 +25,7 @@ impl __sdk::InModule for LocationReport {
 /// Provides typed access to columns for query building.
 pub struct LocationReportCols {
     pub id: __sdk::__query_builder::Col<LocationReport, u64>,
-    pub ship_id: __sdk::__query_builder::Col<LocationReport, u64>,
+    pub ship_mmsi: __sdk::__query_builder::Col<LocationReport, u64>,
     pub lat: __sdk::__query_builder::Col<LocationReport, f64>,
     pub lon: __sdk::__query_builder::Col<LocationReport, f64>,
     pub cog: __sdk::__query_builder::Col<LocationReport, Option<f64>>,
@@ -38,7 +38,7 @@ impl __sdk::__query_builder::HasCols for LocationReport {
     fn cols(table_name: &'static str) -> Self::Cols {
         LocationReportCols {
             id: __sdk::__query_builder::Col::new(table_name, "id"),
-            ship_id: __sdk::__query_builder::Col::new(table_name, "ship_id"),
+            ship_mmsi: __sdk::__query_builder::Col::new(table_name, "ship_mmsi"),
             lat: __sdk::__query_builder::Col::new(table_name, "lat"),
             lon: __sdk::__query_builder::Col::new(table_name, "lon"),
             cog: __sdk::__query_builder::Col::new(table_name, "cog"),
@@ -53,7 +53,7 @@ impl __sdk::__query_builder::HasCols for LocationReport {
 /// Provides typed access to indexed columns for query building.
 pub struct LocationReportIxCols {
     pub id: __sdk::__query_builder::IxCol<LocationReport, u64>,
-    pub ship_id: __sdk::__query_builder::IxCol<LocationReport, u64>,
+    pub ship_mmsi: __sdk::__query_builder::IxCol<LocationReport, u64>,
     pub timestamp: __sdk::__query_builder::IxCol<LocationReport, __sdk::Timestamp>,
 }
 
@@ -62,7 +62,7 @@ impl __sdk::__query_builder::HasIxCols for LocationReport {
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         LocationReportIxCols {
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
-            ship_id: __sdk::__query_builder::IxCol::new(table_name, "ship_id"),
+            ship_mmsi: __sdk::__query_builder::IxCol::new(table_name, "ship_mmsi"),
             timestamp: __sdk::__query_builder::IxCol::new(table_name, "timestamp"),
         }
     }

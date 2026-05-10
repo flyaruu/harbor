@@ -8,12 +8,14 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[sats(crate = __lib)]
 pub(super) struct ProjectShipLocationsArgs {
     pub query_timestamp: __sdk::Timestamp,
+    pub visibility_window_micros: i64,
 }
 
 impl From<ProjectShipLocationsArgs> for super::Reducer {
     fn from(args: ProjectShipLocationsArgs) -> Self {
         Self::ProjectShipLocations {
             query_timestamp: args.query_timestamp,
+            visibility_window_micros: args.visibility_window_micros,
         }
     }
 }
@@ -33,8 +35,12 @@ pub trait project_ship_locations {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`project_ship_locations:project_ship_locations_then`] to run a callback after the reducer completes.
-    fn project_ship_locations(&self, query_timestamp: __sdk::Timestamp) -> __sdk::Result<()> {
-        self.project_ship_locations_then(query_timestamp, |_, _| {})
+    fn project_ship_locations(
+        &self,
+        query_timestamp: __sdk::Timestamp,
+        visibility_window_micros: i64,
+    ) -> __sdk::Result<()> {
+        self.project_ship_locations_then(query_timestamp, visibility_window_micros, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `project_ship_locations` to run as soon as possible,
@@ -46,6 +52,7 @@ pub trait project_ship_locations {
     fn project_ship_locations_then(
         &self,
         query_timestamp: __sdk::Timestamp,
+        visibility_window_micros: i64,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
@@ -57,12 +64,18 @@ impl project_ship_locations for super::RemoteReducers {
     fn project_ship_locations_then(
         &self,
         query_timestamp: __sdk::Timestamp,
+        visibility_window_micros: i64,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp
-            .invoke_reducer_with_callback(ProjectShipLocationsArgs { query_timestamp }, callback)
+        self.imp.invoke_reducer_with_callback(
+            ProjectShipLocationsArgs {
+                query_timestamp,
+                visibility_window_micros,
+            },
+            callback,
+        )
     }
 }

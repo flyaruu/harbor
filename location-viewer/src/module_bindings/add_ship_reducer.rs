@@ -9,6 +9,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 pub(super) struct AddShipArgs {
     pub name: String,
     pub call_sign: Option<String>,
+    pub mmsi: u64,
 }
 
 impl From<AddShipArgs> for super::Reducer {
@@ -16,6 +17,7 @@ impl From<AddShipArgs> for super::Reducer {
         Self::AddShip {
             name: args.name,
             call_sign: args.call_sign,
+            mmsi: args.mmsi,
         }
     }
 }
@@ -35,8 +37,8 @@ pub trait add_ship {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`add_ship:add_ship_then`] to run a callback after the reducer completes.
-    fn add_ship(&self, name: String, call_sign: Option<String>) -> __sdk::Result<()> {
-        self.add_ship_then(name, call_sign, |_, _| {})
+    fn add_ship(&self, name: String, call_sign: Option<String>, mmsi: u64) -> __sdk::Result<()> {
+        self.add_ship_then(name, call_sign, mmsi, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `add_ship` to run as soon as possible,
@@ -49,6 +51,7 @@ pub trait add_ship {
         &self,
         name: String,
         call_sign: Option<String>,
+        mmsi: u64,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
@@ -61,12 +64,19 @@ impl add_ship for super::RemoteReducers {
         &self,
         name: String,
         call_sign: Option<String>,
+        mmsi: u64,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp
-            .invoke_reducer_with_callback(AddShipArgs { name, call_sign }, callback)
+        self.imp.invoke_reducer_with_callback(
+            AddShipArgs {
+                name,
+                call_sign,
+                mmsi,
+            },
+            callback,
+        )
     }
 }

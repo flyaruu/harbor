@@ -6,52 +6,41 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub(super) struct AddShipArgs {
-    pub name: String,
-    pub call_sign: Option<String>,
-    pub mmsi: u64,
-}
+pub(super) struct BackfillMajorShipTypesArgs {}
 
-impl From<AddShipArgs> for super::Reducer {
-    fn from(args: AddShipArgs) -> Self {
-        Self::AddShip {
-            name: args.name,
-            call_sign: args.call_sign,
-            mmsi: args.mmsi,
-        }
+impl From<BackfillMajorShipTypesArgs> for super::Reducer {
+    fn from(args: BackfillMajorShipTypesArgs) -> Self {
+        Self::BackfillMajorShipTypes
     }
 }
 
-impl __sdk::InModule for AddShipArgs {
+impl __sdk::InModule for BackfillMajorShipTypesArgs {
     type Module = super::RemoteModule;
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the reducer `add_ship`.
+/// Extension trait for access to the reducer `backfill_major_ship_types`.
 ///
 /// Implemented for [`super::RemoteReducers`].
-pub trait add_ship {
-    /// Request that the remote module invoke the reducer `add_ship` to run as soon as possible.
+pub trait backfill_major_ship_types {
+    /// Request that the remote module invoke the reducer `backfill_major_ship_types` to run as soon as possible.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
-    /// /// Use [`add_ship:add_ship_then`] to run a callback after the reducer completes.
-    fn add_ship(&self, name: String, call_sign: Option<String>, mmsi: u64) -> __sdk::Result<()> {
-        self.add_ship_then(name, call_sign, mmsi, |_, _| {})
+    /// /// Use [`backfill_major_ship_types:backfill_major_ship_types_then`] to run a callback after the reducer completes.
+    fn backfill_major_ship_types(&self) -> __sdk::Result<()> {
+        self.backfill_major_ship_types_then(|_, _| {})
     }
 
-    /// Request that the remote module invoke the reducer `add_ship` to run as soon as possible,
+    /// Request that the remote module invoke the reducer `backfill_major_ship_types` to run as soon as possible,
     /// registering `callback` to run when we are notified that the reducer completed.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed with the `callback`.
-    fn add_ship_then(
+    fn backfill_major_ship_types_then(
         &self,
-        name: String,
-        call_sign: Option<String>,
-        mmsi: u64,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
@@ -59,24 +48,15 @@ pub trait add_ship {
     ) -> __sdk::Result<()>;
 }
 
-impl add_ship for super::RemoteReducers {
-    fn add_ship_then(
+impl backfill_major_ship_types for super::RemoteReducers {
+    fn backfill_major_ship_types_then(
         &self,
-        name: String,
-        call_sign: Option<String>,
-        mmsi: u64,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(
-            AddShipArgs {
-                name,
-                call_sign,
-                mmsi,
-            },
-            callback,
-        )
+        self.imp
+            .invoke_reducer_with_callback(BackfillMajorShipTypesArgs {}, callback)
     }
 }

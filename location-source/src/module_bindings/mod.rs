@@ -8,8 +8,10 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 pub mod add_location_report_reducer;
 pub mod add_ship_reducer;
+pub mod backfill_major_ship_types_reducer;
 pub mod location_report_table;
 pub mod location_report_type;
+pub mod major_ais_ship_type_type;
 pub mod newest_location_report_time_table;
 pub mod oldest_location_report_time_table;
 pub mod oldest_location_report_time_type;
@@ -19,11 +21,14 @@ pub mod ship_projection_table;
 pub mod ship_projection_type;
 pub mod ship_table;
 pub mod ship_type;
+pub mod upsert_ship_static_data_reducer;
 
 pub use add_location_report_reducer::add_location_report;
 pub use add_ship_reducer::add_ship;
+pub use backfill_major_ship_types_reducer::backfill_major_ship_types;
 pub use location_report_table::*;
 pub use location_report_type::LocationReport;
+pub use major_ais_ship_type_type::MajorAisShipType;
 pub use newest_location_report_time_table::*;
 pub use oldest_location_report_time_table::*;
 pub use oldest_location_report_time_type::OldestLocationReportTime;
@@ -33,6 +38,7 @@ pub use ship_projection_table::*;
 pub use ship_projection_type::ShipProjection;
 pub use ship_table::*;
 pub use ship_type::Ship;
+pub use upsert_ship_static_data_reducer::upsert_ship_static_data;
 
 #[derive(Clone, PartialEq, Debug)]
 
@@ -43,7 +49,7 @@ pub use ship_type::Ship;
 
 pub enum Reducer {
     AddLocationReport {
-        ship_id: u64,
+        ship_mmsi: u64,
         lat: f64,
         lon: f64,
         cog: Option<f64>,
@@ -52,12 +58,35 @@ pub enum Reducer {
     AddShip {
         name: String,
         call_sign: Option<String>,
+        mmsi: u64,
     },
+    BackfillMajorShipTypes,
     ProjectShipLocations {
         query_timestamp: __sdk::Timestamp,
+        visibility_window_micros: i64,
     },
     SetCurrentTime {
         timestamp: __sdk::Timestamp,
+    },
+    UpsertShipStaticData {
+        mmsi: u64,
+        name: String,
+        call_sign: String,
+        destination: String,
+        dimension_a: u16,
+        dimension_b: u16,
+        dimension_c: u16,
+        dimension_d: u16,
+        dte: bool,
+        eta_month: u8,
+        eta_day: u8,
+        eta_hour: u8,
+        eta_minute: u8,
+        fix_type: u8,
+        imo_number: u32,
+        maximum_static_draught: f64,
+        ship_type: u8,
+        ais_version: u8,
     },
 }
 
@@ -70,8 +99,10 @@ impl __sdk::Reducer for Reducer {
         match self {
             Reducer::AddLocationReport { .. } => "add_location_report",
             Reducer::AddShip { .. } => "add_ship",
+            Reducer::BackfillMajorShipTypes => "backfill_major_ship_types",
             Reducer::ProjectShipLocations { .. } => "project_ship_locations",
             Reducer::SetCurrentTime { .. } => "set_current_time",
+            Reducer::UpsertShipStaticData { .. } => "upsert_ship_static_data",
             _ => unreachable!(),
         }
     }
@@ -79,32 +110,81 @@ impl __sdk::Reducer for Reducer {
     fn args_bsatn(&self) -> Result<Vec<u8>, __sats::bsatn::EncodeError> {
         match self {
             Reducer::AddLocationReport {
-                ship_id,
+                ship_mmsi,
                 lat,
                 lon,
                 cog,
                 sog,
             } => __sats::bsatn::to_vec(&add_location_report_reducer::AddLocationReportArgs {
-                ship_id: ship_id.clone(),
+                ship_mmsi: ship_mmsi.clone(),
                 lat: lat.clone(),
                 lon: lon.clone(),
                 cog: cog.clone(),
                 sog: sog.clone(),
             }),
-            Reducer::AddShip { name, call_sign } => {
-                __sats::bsatn::to_vec(&add_ship_reducer::AddShipArgs {
-                    name: name.clone(),
-                    call_sign: call_sign.clone(),
-                })
-            }
-            Reducer::ProjectShipLocations { query_timestamp } => {
-                __sats::bsatn::to_vec(&project_ship_locations_reducer::ProjectShipLocationsArgs {
-                    query_timestamp: query_timestamp.clone(),
-                })
-            }
+            Reducer::AddShip {
+                name,
+                call_sign,
+                mmsi,
+            } => __sats::bsatn::to_vec(&add_ship_reducer::AddShipArgs {
+                name: name.clone(),
+                call_sign: call_sign.clone(),
+                mmsi: mmsi.clone(),
+            }),
+            Reducer::BackfillMajorShipTypes => __sats::bsatn::to_vec(
+                &backfill_major_ship_types_reducer::BackfillMajorShipTypesArgs {},
+            ),
+            Reducer::ProjectShipLocations {
+                query_timestamp,
+                visibility_window_micros,
+            } => __sats::bsatn::to_vec(&project_ship_locations_reducer::ProjectShipLocationsArgs {
+                query_timestamp: query_timestamp.clone(),
+                visibility_window_micros: visibility_window_micros.clone(),
+            }),
             Reducer::SetCurrentTime { timestamp } => {
                 __sats::bsatn::to_vec(&set_current_time_reducer::SetCurrentTimeArgs {
                     timestamp: timestamp.clone(),
+                })
+            }
+            Reducer::UpsertShipStaticData {
+                mmsi,
+                name,
+                call_sign,
+                destination,
+                dimension_a,
+                dimension_b,
+                dimension_c,
+                dimension_d,
+                dte,
+                eta_month,
+                eta_day,
+                eta_hour,
+                eta_minute,
+                fix_type,
+                imo_number,
+                maximum_static_draught,
+                ship_type,
+                ais_version,
+            } => {
+                __sats::bsatn::to_vec(&upsert_ship_static_data_reducer::UpsertShipStaticDataArgs {
+                    mmsi: mmsi.clone(),
+                    name: name.clone(),
+                    call_sign: call_sign.clone(),
+                    destination: destination.clone(),
+                    dimension_a: dimension_a.clone(),
+                    dimension_b: dimension_b.clone(),
+                    dimension_c: dimension_c.clone(),
+                    dimension_d: dimension_d.clone(),
+                    dte: dte.clone(),
+                    eta_month: eta_month.clone(),
+                    eta_day: eta_day.clone(),
+                    eta_hour: eta_hour.clone(),
+                    eta_minute: eta_minute.clone(),
+                    fix_type: fix_type.clone(),
+                    imo_number: imo_number.clone(),
+                    maximum_static_draught: maximum_static_draught.clone(),
+                    ship_type: ship_type.clone(),
+                    ais_version: ais_version.clone(),
                 })
             }
             _ => unreachable!(),
@@ -175,10 +255,10 @@ impl __sdk::DbUpdate for DbUpdate {
             .with_updates_by_pk(|row| &row.id);
         diff.ship = cache
             .apply_diff_to_table::<Ship>("ship", &self.ship)
-            .with_updates_by_pk(|row| &row.id);
+            .with_updates_by_pk(|row| &row.mmsi);
         diff.ship_projection = cache
             .apply_diff_to_table::<ShipProjection>("ship_projection", &self.ship_projection)
-            .with_updates_by_pk(|row| &row.ship_id);
+            .with_updates_by_pk(|row| &row.ship_mmsi);
         diff.newest_location_report_time = cache.apply_diff_to_table::<OldestLocationReportTime>(
             "newest_location_report_time",
             &self.newest_location_report_time,

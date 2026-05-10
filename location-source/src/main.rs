@@ -44,11 +44,8 @@ fn main() {
         println!("New ship: {}", ship.name);
     });
 
-    conn.db().location_report().on_insert(|_ctx, report| {
-        println!(
-            "Ship {} location report: lat={}, lon={}",
-            report.ship_id, report.lat, report.lon
-        );
+    conn.db().location_report().on_insert(|_ctx, _report| {
+        print!(".");
     });
 
     run_ais(conn).unwrap_or_else(|e| eprintln!("Error running AIS stream: {e}"));

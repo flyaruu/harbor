@@ -2,23 +2,52 @@ mod types;
 
 use std::error::Error;
 use std::fmt;
+use std::io::ErrorKind;
+use std::net::TcpStream;
+use std::thread;
+use std::time::Duration;
 
 use http::Uri;
 use serde::{Deserialize, Serialize};
+use tungstenite::stream::MaybeTlsStream;
 use tungstenite::Bytes;
+use tungstenite::WebSocket;
 
-use crate::module_bindings::add_ship_reducer::add_ship;
+use crate::module_bindings::upsert_ship_static_data_reducer::upsert_ship_static_data;
 use crate::module_bindings::{add_location_report, DbConnection};
 
 pub(crate) use types::*;
 
+const AIS_READ_TIMEOUT: Duration = Duration::from_secs(10);
+
 pub(crate) fn run_ais(conn: DbConnection) -> Result<(), Box<dyn Error>> {
+    let mut reconnect_delay = Duration::from_secs(1);
+
+    loop {
+        match run_ais_session(&conn) {
+            Ok(()) => {
+                reconnect_delay = Duration::from_secs(1);
+            }
+            Err(err) => {
+                eprintln!(
+                    "AIS stream disconnected: {err}. Reconnecting in {}s...",
+                    reconnect_delay.as_secs()
+                );
+                thread::sleep(reconnect_delay);
+                reconnect_delay = (reconnect_delay * 2).min(Duration::from_secs(30));
+            }
+        }
+    }
+}
+
+fn run_ais_session(conn: &DbConnection) -> Result<(), Box<dyn Error>> {
     let aisstream_api_url: Uri = Uri::from_static("wss://stream.aisstream.io/v0/stream");
     let aisstream_api_key: String = std::env::var("AISSTREAM_API_KEY")
         .unwrap_or("401620aea8c9f66129af3d8b1caec95a86144a61".to_owned());
 
     println!("Connecting `{aisstream_api_url}`");
     let (mut socket, _) = tungstenite::connect(aisstream_api_url)?;
+    set_socket_read_timeout(&mut socket, AIS_READ_TIMEOUT)?;
 
     let auth_request = AuthRequest {
         api_key: aisstream_api_key,
@@ -29,41 +58,52 @@ pub(crate) fn run_ais(conn: DbConnection) -> Result<(), Box<dyn Error>> {
 
     println!("Authenticating...");
     socket.send(tungstenite::Message::Binary(auth_request_bytes))?;
-    // let message = match socket.read()? {
-    //     tungstenite::Message::Binary(message) => {
-    //         println!("Received authentication response: {:?}", message);
-    //         match serde_json::from_slice::<AuthMessage>(&message)? {
-    //             AuthMessage::AuthError(message) => {
-    //                 return Err(format!("Authentication error: {message:?}").into());
-    //             }
-    //             AuthMessage::Message(message) => Some(message),
-    //             _ => None,
-    //         }
-    //     }
-    //     _ => None,
-    // };
 
     println!("Successfully authenticated");
-    // if let Some(message) = message {
-    //     print_message(&message);
-    // }
-
+    let mut message_count = 0;
     loop {
-        println!("Waiting for messages...");
-        let message = match socket.read()? {
-            tungstenite::Message::Binary(message) => {
+        let message = match socket.read() {
+            Err(tungstenite::Error::Io(err))
+                if matches!(err.kind(), ErrorKind::TimedOut | ErrorKind::WouldBlock) =>
+            {
+                return Err(format!(
+                    "No AIS messages received for {} seconds",
+                    AIS_READ_TIMEOUT.as_secs()
+                )
+                .into());
+            }
+            Err(err) => return Err(err.into()),
+            Ok(tungstenite::Message::Binary(message)) => {
                 serde_json::from_slice::<AisStreamMessage>(&message)?
             }
-            tungstenite::Message::Close(message) => {
+            Ok(tungstenite::Message::Close(message)) => {
                 return Err(format!("Connection closed: {message:?}").into());
             }
-            _ => continue,
+            Ok(_) => continue,
         };
-        print_message(&conn, &message);
+        process_message(conn, &message);
+        message_count += 1;
+        if message_count % 1000 == 0 {
+            println!("Received {message_count} AIS messages");
+        }
     }
 }
 
-fn print_message(conn: &DbConnection, message: &AisStreamMessage) {
+fn set_socket_read_timeout(
+    socket: &mut WebSocket<MaybeTlsStream<TcpStream>>,
+    timeout: Duration,
+) -> Result<(), Box<dyn Error>> {
+    match socket.get_mut() {
+        MaybeTlsStream::Plain(stream) => stream.set_read_timeout(Some(timeout))?,
+        MaybeTlsStream::NativeTls(stream) => stream.get_mut().set_read_timeout(Some(timeout))?,
+        #[allow(unreachable_patterns)]
+        _ => {}
+    }
+
+    Ok(())
+}
+
+fn process_message(conn: &DbConnection, message: &AisStreamMessage) {
     match message {
         AisStreamMessage::PositionReport { metadata, body } => {
             conn.reducers
@@ -75,10 +115,6 @@ fn print_message(conn: &DbConnection, message: &AisStreamMessage) {
                     Some(body.sog),
                 )
                 .unwrap();
-            println!(
-                ">>>>>>>{} position: lat={}, lon={}, sog={}, cog={}",
-                metadata.ship_name, body.latitude, body.longitude, body.sog, body.cog
-            );
         }
         AisStreamMessage::StandardClassBPositionReport { metadata, body } => {
             conn.reducers
@@ -90,29 +126,36 @@ fn print_message(conn: &DbConnection, message: &AisStreamMessage) {
                     Some(body.sog),
                 )
                 .unwrap();
-            println!(
-                ">>>>>>>{} class B position: lat={}, lon={}, sog={}, cog={}",
-                metadata.ship_name, body.latitude, body.longitude, body.sog, body.cog
-            );
         }
-        AisStreamMessage::ShipStaticData { body, .. } => {
+        AisStreamMessage::ShipStaticData { metadata, body } => {
             conn.reducers
-                .add_ship(body.name.clone(), Some(body.call_sign.clone()))
+                .upsert_ship_static_data(
+                    metadata.mmsi,
+                    body.name.clone(),
+                    body.call_sign.clone(),
+                    body.destination.clone(),
+                    body.dimension.a,
+                    body.dimension.b,
+                    body.dimension.c,
+                    body.dimension.d,
+                    body.dte,
+                    body.eta.month,
+                    body.eta.day,
+                    body.eta.hour,
+                    body.eta.minute,
+                    body.fix_type,
+                    body.imo_number,
+                    body.maximum_static_draught,
+                    body.ship_type,
+                    body.ais_version,
+                )
                 .unwrap();
-            println!(
-                ">>>>>>>{} static data: callsign={}, destination={}",
-                body.name, body.call_sign, body.destination
-            );
         }
         AisStreamMessage::UnknownMessage { metadata, .. } => {
             println!("{} unknown AIS message", metadata.ship_name);
         }
         AisStreamMessage::Other { .. } => {}
     }
-
-    let pretty_message = serde_json::to_string_pretty(message)
-        .unwrap_or_else(|_| "Failed to serialize message".to_string());
-    println!("{pretty_message}");
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

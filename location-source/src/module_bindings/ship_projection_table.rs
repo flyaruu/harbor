@@ -95,30 +95,30 @@ impl<'ctx> __sdk::TableWithPrimaryKey for ShipProjectionTableHandle<'ctx> {
     }
 }
 
-/// Access to the `ship_id` unique index on the table `ship_projection`,
+/// Access to the `ship_mmsi` unique index on the table `ship_projection`,
 /// which allows point queries on the field of the same name
-/// via the [`ShipProjectionShipIdUnique::find`] method.
+/// via the [`ShipProjectionShipMmsiUnique::find`] method.
 ///
 /// Users are encouraged not to explicitly reference this type,
 /// but to directly chain method calls,
-/// like `ctx.db.ship_projection().ship_id().find(...)`.
-pub struct ShipProjectionShipIdUnique<'ctx> {
+/// like `ctx.db.ship_projection().ship_mmsi().find(...)`.
+pub struct ShipProjectionShipMmsiUnique<'ctx> {
     imp: __sdk::UniqueConstraintHandle<ShipProjection, u64>,
     phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
 impl<'ctx> ShipProjectionTableHandle<'ctx> {
-    /// Get a handle on the `ship_id` unique index on the table `ship_projection`.
-    pub fn ship_id(&self) -> ShipProjectionShipIdUnique<'ctx> {
-        ShipProjectionShipIdUnique {
-            imp: self.imp.get_unique_constraint::<u64>("ship_id"),
+    /// Get a handle on the `ship_mmsi` unique index on the table `ship_projection`.
+    pub fn ship_mmsi(&self) -> ShipProjectionShipMmsiUnique<'ctx> {
+        ShipProjectionShipMmsiUnique {
+            imp: self.imp.get_unique_constraint::<u64>("ship_mmsi"),
             phantom: std::marker::PhantomData,
         }
     }
 }
 
-impl<'ctx> ShipProjectionShipIdUnique<'ctx> {
-    /// Find the subscribed row whose `ship_id` column value is equal to `col_val`,
+impl<'ctx> ShipProjectionShipMmsiUnique<'ctx> {
+    /// Find the subscribed row whose `ship_mmsi` column value is equal to `col_val`,
     /// if such a row is present in the client cache.
     pub fn find(&self, col_val: &u64) -> Option<ShipProjection> {
         self.imp.find(col_val)
@@ -128,7 +128,7 @@ impl<'ctx> ShipProjectionShipIdUnique<'ctx> {
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
     let _table = client_cache.get_or_make_table::<ShipProjection>("ship_projection");
-    _table.add_unique_constraint::<u64>("ship_id", |row| &row.ship_id);
+    _table.add_unique_constraint::<u64>("ship_mmsi", |row| &row.ship_mmsi);
 }
 
 #[doc(hidden)]

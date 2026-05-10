@@ -7,7 +7,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct ShipProjection {
-    pub ship_id: u64,
+    pub ship_mmsi: u64,
     pub query_timestamp: __sdk::Timestamp,
     pub lat: f64,
     pub lon: f64,
@@ -26,7 +26,7 @@ impl __sdk::InModule for ShipProjection {
 ///
 /// Provides typed access to columns for query building.
 pub struct ShipProjectionCols {
-    pub ship_id: __sdk::__query_builder::Col<ShipProjection, u64>,
+    pub ship_mmsi: __sdk::__query_builder::Col<ShipProjection, u64>,
     pub query_timestamp: __sdk::__query_builder::Col<ShipProjection, __sdk::Timestamp>,
     pub lat: __sdk::__query_builder::Col<ShipProjection, f64>,
     pub lon: __sdk::__query_builder::Col<ShipProjection, f64>,
@@ -41,7 +41,7 @@ impl __sdk::__query_builder::HasCols for ShipProjection {
     type Cols = ShipProjectionCols;
     fn cols(table_name: &'static str) -> Self::Cols {
         ShipProjectionCols {
-            ship_id: __sdk::__query_builder::Col::new(table_name, "ship_id"),
+            ship_mmsi: __sdk::__query_builder::Col::new(table_name, "ship_mmsi"),
             query_timestamp: __sdk::__query_builder::Col::new(table_name, "query_timestamp"),
             lat: __sdk::__query_builder::Col::new(table_name, "lat"),
             lon: __sdk::__query_builder::Col::new(table_name, "lon"),
@@ -61,14 +61,14 @@ impl __sdk::__query_builder::HasCols for ShipProjection {
 ///
 /// Provides typed access to indexed columns for query building.
 pub struct ShipProjectionIxCols {
-    pub ship_id: __sdk::__query_builder::IxCol<ShipProjection, u64>,
+    pub ship_mmsi: __sdk::__query_builder::IxCol<ShipProjection, u64>,
 }
 
 impl __sdk::__query_builder::HasIxCols for ShipProjection {
     type IxCols = ShipProjectionIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         ShipProjectionIxCols {
-            ship_id: __sdk::__query_builder::IxCol::new(table_name, "ship_id"),
+            ship_mmsi: __sdk::__query_builder::IxCol::new(table_name, "ship_mmsi"),
         }
     }
 }

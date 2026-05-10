@@ -7,7 +7,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct AddLocationReportArgs {
-    pub ship_id: u64,
+    pub ship_mmsi: u64,
     pub lat: f64,
     pub lon: f64,
     pub cog: Option<f64>,
@@ -17,7 +17,7 @@ pub(super) struct AddLocationReportArgs {
 impl From<AddLocationReportArgs> for super::Reducer {
     fn from(args: AddLocationReportArgs) -> Self {
         Self::AddLocationReport {
-            ship_id: args.ship_id,
+            ship_mmsi: args.ship_mmsi,
             lat: args.lat,
             lon: args.lon,
             cog: args.cog,
@@ -43,13 +43,13 @@ pub trait add_location_report {
     /// /// Use [`add_location_report:add_location_report_then`] to run a callback after the reducer completes.
     fn add_location_report(
         &self,
-        ship_id: u64,
+        ship_mmsi: u64,
         lat: f64,
         lon: f64,
         cog: Option<f64>,
         sog: Option<f64>,
     ) -> __sdk::Result<()> {
-        self.add_location_report_then(ship_id, lat, lon, cog, sog, |_, _| {})
+        self.add_location_report_then(ship_mmsi, lat, lon, cog, sog, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `add_location_report` to run as soon as possible,
@@ -60,7 +60,7 @@ pub trait add_location_report {
     ///  and its status can be observed with the `callback`.
     fn add_location_report_then(
         &self,
-        ship_id: u64,
+        ship_mmsi: u64,
         lat: f64,
         lon: f64,
         cog: Option<f64>,
@@ -75,7 +75,7 @@ pub trait add_location_report {
 impl add_location_report for super::RemoteReducers {
     fn add_location_report_then(
         &self,
-        ship_id: u64,
+        ship_mmsi: u64,
         lat: f64,
         lon: f64,
         cog: Option<f64>,
@@ -87,7 +87,7 @@ impl add_location_report for super::RemoteReducers {
     ) -> __sdk::Result<()> {
         self.imp.invoke_reducer_with_callback(
             AddLocationReportArgs {
-                ship_id,
+                ship_mmsi,
                 lat,
                 lon,
                 cog,
