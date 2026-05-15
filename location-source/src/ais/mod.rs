@@ -43,7 +43,7 @@ pub(crate) fn run_ais(conn: DbConnection) -> Result<(), Box<dyn Error>> {
 fn run_ais_session(conn: &DbConnection) -> Result<(), Box<dyn Error>> {
     let aisstream_api_url: Uri = Uri::from_static("wss://stream.aisstream.io/v0/stream");
     let aisstream_api_key: String = std::env::var("AISSTREAM_API_KEY")
-        .unwrap_or("401620aea8c9f66129af3d8b1caec95a86144a61".to_owned());
+        .unwrap_or("".to_owned());
 
     println!("Connecting `{aisstream_api_url}`");
     let (mut socket, _) = tungstenite::connect(aisstream_api_url)?;

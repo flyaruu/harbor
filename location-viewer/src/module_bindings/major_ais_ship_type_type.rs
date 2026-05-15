@@ -13,11 +13,39 @@ pub enum MajorAisShipType {
 
     WingInGround,
 
-    FishingOrService,
+    Fishing,
+
+    Towing,
+
+    TowingLarge,
+
+    DredgingOrUnderwaterOps,
+
+    DivingOps,
+
+    MilitaryOps,
+
+    Sailing,
+
+    PleasureCraft,
 
     HighSpeedCraft,
 
-    SpecialCraft,
+    PilotVessel,
+
+    SearchAndRescueVessel,
+
+    Tug,
+
+    PortTender,
+
+    AntiPollutionEquipment,
+
+    LawEnforcement,
+
+    MedicalTransport,
+
+    NoncombatantShip,
 
     Passenger,
 
