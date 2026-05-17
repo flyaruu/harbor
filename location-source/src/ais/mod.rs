@@ -2,13 +2,17 @@ mod types;
 
 use std::error::Error;
 use std::fmt;
+use std::fs::{self, File};
 use std::io::ErrorKind;
+use std::io::{LineWriter, Write};
 use std::net::TcpStream;
+use std::path::Path;
 use std::thread;
 use std::time::Duration;
 
 use http::Uri;
 use serde::{Deserialize, Serialize};
+use spacetimedb_sdk::Timestamp;
 use tungstenite::stream::MaybeTlsStream;
 use tungstenite::Bytes;
 use tungstenite::WebSocket;
@@ -20,11 +24,89 @@ pub(crate) use types::*;
 
 const AIS_READ_TIMEOUT: Duration = Duration::from_secs(10);
 
+#[derive(Serialize)]
+struct LocationReportLogEntry {
+    received_at: String,
+    source: &'static str,
+    mmsi: u64,
+    ship_name: String,
+    lat: f64,
+    lon: f64,
+    cog: f64,
+    sog: f64,
+}
+
+#[derive(Serialize)]
+struct ShipStaticDataLogEntry {
+    received_at: String,
+    source: &'static str,
+    mmsi: u64,
+    name: String,
+    call_sign: String,
+    destination: String,
+    dimension_a: u16,
+    dimension_b: u16,
+    dimension_c: u16,
+    dimension_d: u16,
+    dte: bool,
+    eta_month: u8,
+    eta_day: u8,
+    eta_hour: u8,
+    eta_minute: u8,
+    fix_type: u8,
+    imo_number: u32,
+    maximum_static_draught: f64,
+    ship_type: u8,
+    ais_version: u8,
+}
+
+struct AisFileLogger {
+    location_reports: LineWriter<File>,
+    ship_static_data: LineWriter<File>,
+}
+
+impl AisFileLogger {
+    fn new() -> Result<Self, Box<dyn Error>> {
+        let output_dir = Path::new("output");
+        fs::create_dir_all(output_dir)?;
+
+        let run_number = next_run_number(output_dir)?;
+        let location_reports_path =
+            output_dir.join(format!("run_{run_number:04}_location_reports.jsonl"));
+        let ship_static_data_path =
+            output_dir.join(format!("run_{run_number:04}_ship_static_data.jsonl"));
+
+        Ok(Self {
+            location_reports: LineWriter::new(File::create(location_reports_path)?),
+            ship_static_data: LineWriter::new(File::create(ship_static_data_path)?),
+        })
+    }
+
+    fn log_location_report(
+        &mut self,
+        entry: &LocationReportLogEntry,
+    ) -> Result<(), Box<dyn Error>> {
+        serde_json::to_writer(&mut self.location_reports, entry)?;
+        self.location_reports.write_all(b"\n")?;
+        Ok(())
+    }
+
+    fn log_ship_static_data(
+        &mut self,
+        entry: &ShipStaticDataLogEntry,
+    ) -> Result<(), Box<dyn Error>> {
+        serde_json::to_writer(&mut self.ship_static_data, entry)?;
+        self.ship_static_data.write_all(b"\n")?;
+        Ok(())
+    }
+}
+
 pub(crate) fn run_ais(conn: DbConnection) -> Result<(), Box<dyn Error>> {
     let mut reconnect_delay = Duration::from_secs(1);
+    let mut logger = AisFileLogger::new()?;
 
     loop {
-        match run_ais_session(&conn) {
+        match run_ais_session(&conn, &mut logger) {
             Ok(()) => {
                 reconnect_delay = Duration::from_secs(1);
             }
@@ -40,10 +122,9 @@ pub(crate) fn run_ais(conn: DbConnection) -> Result<(), Box<dyn Error>> {
     }
 }
 
-fn run_ais_session(conn: &DbConnection) -> Result<(), Box<dyn Error>> {
+fn run_ais_session(conn: &DbConnection, logger: &mut AisFileLogger) -> Result<(), Box<dyn Error>> {
     let aisstream_api_url: Uri = Uri::from_static("wss://stream.aisstream.io/v0/stream");
-    let aisstream_api_key: String = std::env::var("AISSTREAM_API_KEY")
-        .unwrap_or("".to_owned());
+    let aisstream_api_key: String = std::env::var("AISSTREAM_API_KEY").unwrap_or("".to_owned());
 
     println!("Connecting `{aisstream_api_url}`");
     let (mut socket, _) = tungstenite::connect(aisstream_api_url)?;
@@ -81,12 +162,46 @@ fn run_ais_session(conn: &DbConnection) -> Result<(), Box<dyn Error>> {
             }
             Ok(_) => continue,
         };
-        process_message(conn, &message);
+        process_message(conn, logger, &message);
         message_count += 1;
         if message_count % 1000 == 0 {
             println!("Received {message_count} AIS messages");
         }
     }
+}
+
+fn next_run_number(output_dir: &Path) -> Result<u32, Box<dyn Error>> {
+    let mut max_run = 0;
+
+    for entry in fs::read_dir(output_dir)? {
+        let entry = entry?;
+        let Some(file_name) = entry.file_name().to_str().map(str::to_owned) else {
+            continue;
+        };
+
+        let Some(rest) = file_name.strip_prefix("run_") else {
+            continue;
+        };
+        let Some((run_number, _)) = rest.split_once('_') else {
+            continue;
+        };
+        let Ok(run_number) = run_number.parse::<u32>() else {
+            continue;
+        };
+        max_run = max_run.max(run_number);
+    }
+
+    Ok(max_run + 1)
+}
+
+fn received_at_string() -> String {
+    Timestamp::now()
+        .to_rfc3339()
+        .unwrap_or_else(|_| Timestamp::now().to_micros_since_unix_epoch().to_string())
+}
+
+fn clean_string(value: &str) -> String {
+    value.replace(['\r', '\n'], " ").trim().to_string()
 }
 
 fn set_socket_read_timeout(
@@ -103,7 +218,7 @@ fn set_socket_read_timeout(
     Ok(())
 }
 
-fn process_message(conn: &DbConnection, message: &AisStreamMessage) {
+fn process_message(conn: &DbConnection, logger: &mut AisFileLogger, message: &AisStreamMessage) {
     match message {
         AisStreamMessage::PositionReport { metadata, body } => {
             conn.reducers
@@ -115,6 +230,19 @@ fn process_message(conn: &DbConnection, message: &AisStreamMessage) {
                     Some(body.sog),
                 )
                 .unwrap();
+
+            logger
+                .log_location_report(&LocationReportLogEntry {
+                    received_at: received_at_string(),
+                    source: "PositionReport",
+                    mmsi: metadata.mmsi,
+                    ship_name: clean_string(&metadata.ship_name),
+                    lat: body.latitude,
+                    lon: body.longitude,
+                    cog: body.cog,
+                    sog: body.sog,
+                })
+                .unwrap();
         }
         AisStreamMessage::StandardClassBPositionReport { metadata, body } => {
             conn.reducers
@@ -125,6 +253,19 @@ fn process_message(conn: &DbConnection, message: &AisStreamMessage) {
                     Some(body.cog),
                     Some(body.sog),
                 )
+                .unwrap();
+
+            logger
+                .log_location_report(&LocationReportLogEntry {
+                    received_at: received_at_string(),
+                    source: "StandardClassBPositionReport",
+                    mmsi: metadata.mmsi,
+                    ship_name: clean_string(&metadata.ship_name),
+                    lat: body.latitude,
+                    lon: body.longitude,
+                    cog: body.cog,
+                    sog: body.sog,
+                })
                 .unwrap();
         }
         AisStreamMessage::ShipStaticData { metadata, body } => {
@@ -149,6 +290,31 @@ fn process_message(conn: &DbConnection, message: &AisStreamMessage) {
                     body.ship_type,
                     body.ais_version,
                 )
+                .unwrap();
+
+            logger
+                .log_ship_static_data(&ShipStaticDataLogEntry {
+                    received_at: received_at_string(),
+                    source: "ShipStaticData",
+                    mmsi: metadata.mmsi,
+                    name: clean_string(&body.name),
+                    call_sign: clean_string(&body.call_sign),
+                    destination: clean_string(&body.destination),
+                    dimension_a: body.dimension.a,
+                    dimension_b: body.dimension.b,
+                    dimension_c: body.dimension.c,
+                    dimension_d: body.dimension.d,
+                    dte: body.dte,
+                    eta_month: body.eta.month,
+                    eta_day: body.eta.day,
+                    eta_hour: body.eta.hour,
+                    eta_minute: body.eta.minute,
+                    fix_type: body.fix_type,
+                    imo_number: body.imo_number,
+                    maximum_static_draught: body.maximum_static_draught,
+                    ship_type: body.ship_type,
+                    ais_version: body.ais_version,
+                })
                 .unwrap();
         }
         AisStreamMessage::UnknownMessage { metadata, .. } => {
