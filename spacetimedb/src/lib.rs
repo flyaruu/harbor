@@ -6,6 +6,7 @@ use spacetimedb::{
 
 mod mmsi_types;
 use mmsi_types::MajorAisShipType;
+#[derive(PartialEq)]
 #[spacetimedb::table(accessor = ship, public)]
 pub struct Ship {
     #[primary_key]
@@ -50,6 +51,7 @@ pub struct LocationReport {
     timestamp: Timestamp,
 }
 
+#[derive(PartialEq)]
 #[spacetimedb::table(accessor = ship_projection, public)]
 pub struct ShipProjection {
     #[primary_key]
@@ -62,6 +64,14 @@ pub struct ShipProjection {
     before_timestamp: Timestamp,
     after_timestamp: Option<Timestamp>,
     used_dead_reckoning: bool,
+}
+
+#[spacetimedb::table(accessor = current_projection_request)]
+pub struct CurrentProjectionRequest {
+    #[primary_key]
+    request_id: u8,
+    query_timestamp: Timestamp,
+    visibility_window_micros: i64,
 }
 
 #[derive(Default)]
@@ -79,18 +89,6 @@ struct ProjectionEstimate {
     before_timestamp: Timestamp,
     after_timestamp: Option<Timestamp>,
     used_dead_reckoning: bool,
-}
-
-fn ship_projection_equal(left: &ShipProjection, right: &ShipProjection) -> bool {
-    left.ship_mmsi == right.ship_mmsi
-        && left.query_timestamp == right.query_timestamp
-        && left.lat == right.lat
-        && left.lon == right.lon
-        && left.cog == right.cog
-        && left.sog == right.sog
-        && left.before_timestamp == right.before_timestamp
-        && left.after_timestamp == right.after_timestamp
-        && left.used_dead_reckoning == right.used_dead_reckoning
 }
 
 struct ShipStaticUpdate {
@@ -117,6 +115,19 @@ struct ShipStaticUpdate {
 #[derive(SpacetimeType, Clone, Debug)]
 pub struct OldestLocationReportTime {
     timestamp: Timestamp,
+}
+
+#[derive(SpacetimeType, Clone, Debug)]
+pub struct CurrentShipProjection {
+    ship_mmsi: u64,
+    query_timestamp: Timestamp,
+    lat: f64,
+    lon: f64,
+    cog: Option<f64>,
+    sog: Option<f64>,
+    before_timestamp: Timestamp,
+    after_timestamp: Option<Timestamp>,
+    used_dead_reckoning: bool,
 }
 
 fn insert_location_report(
@@ -175,28 +186,6 @@ fn merge_ship(existing: &Ship, incoming_name: String, incoming_call_sign: Option
         ais_version: existing.ais_version,
         major_ship_type: existing.major_ship_type,
     }
-}
-
-fn ships_equal(left: &Ship, right: &Ship) -> bool {
-    left.mmsi == right.mmsi
-        && left.name == right.name
-        && left.call_sign == right.call_sign
-        && left.destination == right.destination
-        && left.dimension_a == right.dimension_a
-        && left.dimension_b == right.dimension_b
-        && left.dimension_c == right.dimension_c
-        && left.dimension_d == right.dimension_d
-        && left.dte == right.dte
-        && left.eta_month == right.eta_month
-        && left.eta_day == right.eta_day
-        && left.eta_hour == right.eta_hour
-        && left.eta_minute == right.eta_minute
-        && left.fix_type == right.fix_type
-        && left.imo_number == right.imo_number
-        && left.maximum_static_draught == right.maximum_static_draught
-        && left.ship_type == right.ship_type
-        && left.ais_version == right.ais_version
-        && left.major_ship_type == right.major_ship_type
 }
 
 fn normalize_optional_string(value: String) -> Option<String> {
@@ -407,6 +396,94 @@ fn interpolate_optional_heading(
     }
 }
 
+fn projection_window_bounds(
+    query_timestamp: Timestamp,
+    visibility_window_micros: i64,
+) -> Result<(Timestamp, Timestamp), String> {
+    if visibility_window_micros <= 0 {
+        return Err("visibility_window_micros must be greater than 0".to_string());
+    }
+
+    let projection_visibility_window = TimeDuration::from_micros(visibility_window_micros);
+    let window_start = query_timestamp
+        .checked_sub(projection_visibility_window)
+        .ok_or("Projection window underflow")?;
+    let window_end_exclusive = query_timestamp
+        .checked_add(projection_visibility_window)
+        .ok_or("Projection window overflow")?
+        .checked_add(TimeDuration::from_micros(1))
+        .ok_or("Projection window overflow")?;
+
+    Ok((window_start, window_end_exclusive))
+}
+
+fn collect_report_windows<I>(reports: I, query_timestamp: Timestamp) -> BTreeMap<u64, ReportWindow>
+where
+    I: IntoIterator<Item = LocationReport>,
+{
+    let mut windows: BTreeMap<u64, ReportWindow> = BTreeMap::new();
+
+    for report in reports {
+        let window = windows.entry(report.ship_mmsi).or_default();
+
+        if report.timestamp <= query_timestamp {
+            let replace_before = window
+                .before
+                .as_ref()
+                .map(|existing| report.timestamp > existing.timestamp)
+                .unwrap_or(true);
+
+            if replace_before {
+                window.before = Some(report);
+            }
+        } else {
+            let replace_after = window
+                .after
+                .as_ref()
+                .map(|existing| report.timestamp < existing.timestamp)
+                .unwrap_or(true);
+
+            if replace_after {
+                window.after = Some(report);
+            }
+        }
+    }
+
+    windows
+}
+
+fn build_projection_estimates(
+    windows: BTreeMap<u64, ReportWindow>,
+    query_timestamp: Timestamp,
+) -> BTreeMap<u64, ProjectionEstimate> {
+    let mut projections = BTreeMap::new();
+
+    for (ship_mmsi, window) in windows {
+        if let Some(projection) = estimate_projection(&window, query_timestamp) {
+            projections.insert(ship_mmsi, projection);
+        }
+    }
+
+    projections
+}
+
+fn to_current_ship_projection(
+    ship_mmsi: u64,
+    projection: ProjectionEstimate,
+) -> CurrentShipProjection {
+    CurrentShipProjection {
+        ship_mmsi,
+        query_timestamp: projection.query_timestamp,
+        lat: projection.lat,
+        lon: projection.lon,
+        cog: projection.cog,
+        sog: projection.sog,
+        before_timestamp: projection.before_timestamp,
+        after_timestamp: projection.after_timestamp,
+        used_dead_reckoning: projection.used_dead_reckoning,
+    }
+}
+
 fn dead_reckon_location(report: &LocationReport, query_timestamp: Timestamp) -> Option<(f64, f64)> {
     let sog = report.sog?;
     let cog = report.cog?;
@@ -495,7 +572,7 @@ pub fn add_ship(
 ) -> Result<(), String> {
     if let Some(existing) = ctx.db.ship().mmsi().find(&mmsi) {
         let merged = merge_ship(&existing, name, call_sign);
-        if !ships_equal(&existing, &merged) {
+        if existing != merged {
             ctx.db.ship().mmsi().update(merged);
         }
     } else {
@@ -570,7 +647,7 @@ pub fn upsert_ship_static_data(
     let next_row = merge_ship_static_data(existing.as_ref(), mmsi, update);
 
     if let Some(existing) = existing {
-        if !ships_equal(&existing, &next_row) {
+        if existing != next_row {
             ctx.db.ship().mmsi().update(next_row);
         }
     } else {
@@ -652,8 +729,34 @@ pub fn newest_location_report_time(ctx: &ViewContext) -> Option<OldestLocationRe
     Some(OldestLocationReportTime { timestamp: newest? })
 }
 
+#[view(accessor = current_ship_projection, public)]
+pub fn current_ship_projection(ctx: &ViewContext) -> Vec<CurrentShipProjection> {
+    let Some(request) = ctx.db.current_projection_request().request_id().find(&0) else {
+        return Vec::new();
+    };
+
+    let Ok((window_start, window_end_exclusive)) =
+        projection_window_bounds(request.query_timestamp, request.visibility_window_micros)
+    else {
+        return Vec::new();
+    };
+
+    let windows = collect_report_windows(
+        ctx.db
+            .location_report()
+            .by_time()
+            .filter(window_start..window_end_exclusive),
+        request.query_timestamp,
+    );
+
+    build_projection_estimates(windows, request.query_timestamp)
+        .into_iter()
+        .map(|(ship_mmsi, projection)| to_current_ship_projection(ship_mmsi, projection))
+        .collect()
+}
+
 #[spacetimedb::reducer]
-pub fn project_ship_locations(
+pub fn set_current_projection_request(
     ctx: &ReducerContext,
     query_timestamp: Timestamp,
     visibility_window_micros: i64,
@@ -662,55 +765,48 @@ pub fn project_ship_locations(
         return Err("visibility_window_micros must be greater than 0".to_string());
     }
 
-    let mut windows: BTreeMap<u64, ReportWindow> = BTreeMap::new();
-    let projection_visibility_window = TimeDuration::from_micros(visibility_window_micros);
-    let window_start = query_timestamp
-        .checked_sub(projection_visibility_window)
-        .ok_or("Projection window underflow")?;
-    let window_end_exclusive = query_timestamp
-        .checked_add(projection_visibility_window)
-        .ok_or("Projection window overflow")?
-        .checked_add(TimeDuration::from_micros(1))
-        .ok_or("Projection window overflow")?;
+    let next_row = CurrentProjectionRequest {
+        request_id: 0,
+        query_timestamp,
+        visibility_window_micros,
+    };
 
-    for report in ctx
+    if ctx
         .db
-        .location_report()
-        .by_time()
-        .filter(window_start..window_end_exclusive)
+        .current_projection_request()
+        .request_id()
+        .find(&0)
+        .is_some()
     {
-        let window = windows.entry(report.ship_mmsi).or_default();
-
-        if report.timestamp <= query_timestamp {
-            let replace_before = window
-                .before
-                .as_ref()
-                .map(|existing| report.timestamp > existing.timestamp)
-                .unwrap_or(true);
-
-            if replace_before {
-                window.before = Some(report);
-            }
-        } else {
-            let replace_after = window
-                .after
-                .as_ref()
-                .map(|existing| report.timestamp < existing.timestamp)
-                .unwrap_or(true);
-
-            if replace_after {
-                window.after = Some(report);
-            }
-        }
+        ctx.db
+            .current_projection_request()
+            .request_id()
+            .update(next_row);
+    } else {
+        ctx.db.current_projection_request().insert(next_row);
     }
 
-    let mut projections: BTreeMap<u64, ProjectionEstimate> = BTreeMap::new();
+    Ok(())
+}
 
-    for (ship_mmsi, window) in windows {
-        if let Some(projection) = estimate_projection(&window, query_timestamp) {
-            projections.insert(ship_mmsi, projection);
-        }
-    }
+#[spacetimedb::reducer]
+pub fn project_ship_locations(
+    ctx: &ReducerContext,
+    query_timestamp: Timestamp,
+    visibility_window_micros: i64,
+) -> Result<(), String> {
+    let (window_start, window_end_exclusive) =
+        projection_window_bounds(query_timestamp, visibility_window_micros)?;
+
+    let windows = collect_report_windows(
+        ctx.db
+            .location_report()
+            .by_time()
+            .filter(window_start..window_end_exclusive),
+        query_timestamp,
+    );
+
+    let projections = build_projection_estimates(windows, query_timestamp);
 
     let existing_projections: BTreeMap<u64, ShipProjection> = ctx
         .db
@@ -739,7 +835,7 @@ pub fn project_ship_locations(
         };
 
         if let Some(existing) = existing_projections.get(&ship_mmsi) {
-            if !ship_projection_equal(existing, &next_row) {
+            if existing != &next_row {
                 ctx.db.ship_projection().ship_mmsi().update(next_row);
             }
         } else {

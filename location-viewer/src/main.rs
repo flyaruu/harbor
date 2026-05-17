@@ -27,11 +27,11 @@ fn main() {
         .on_connect(|conn, _, _| {
             println!("Connected to SpacetimeDB");
 
-            if let Err(err) = conn
-                .reducers
-                .project_ship_locations(projection_timestamp(), PROJECTION_VISIBILITY_WINDOW_MICROS)
-            {
-                eprintln!("Failed to request ship projection: {err}");
+            if let Err(err) = conn.reducers.set_current_projection_request(
+                projection_timestamp(),
+                PROJECTION_VISIBILITY_WINDOW_MICROS,
+            ) {
+                eprintln!("Failed to set current projection request: {err}");
             }
         })
         .on_connect_error(|_ctx, e| {
@@ -45,17 +45,17 @@ fn main() {
 
     conn.subscription_builder()
         .on_applied(|ctx| {
-            println!("Subscribed to ship and ship_projection tables");
+            println!("Subscribed to ship and current_ship_projection views");
 
             println!(
                 "Cached {} ships and {} projections",
                 ctx.db().ship().iter().count(),
-                ctx.db().ship_projection().iter().count()
+                ctx.db().current_ship_projection().iter().count()
             );
         })
         .on_error(|_ctx, e| eprintln!("There was an error when subscribing: {e}"))
         .add_query(|q| q.from.ship())
-        .add_query(|q| q.from.ship_projection())
+        .add_query(|q| q.from.current_ship_projection())
         .subscribe();
 
     conn.db().ship().on_insert(|_ctx, ship| {
