@@ -389,6 +389,24 @@ fn interpolate_optional_value(
     }
 }
 
+fn interpolate_optional_heading(
+    before: Option<f64>,
+    after: Option<f64>,
+    fraction: f64,
+) -> Option<f64> {
+    match (before, after) {
+        (Some(before), Some(after)) => {
+            let before = before.rem_euclid(360.0);
+            let after = after.rem_euclid(360.0);
+            let delta = (after - before + 540.0).rem_euclid(360.0) - 180.0;
+            Some((before + delta * fraction).rem_euclid(360.0))
+        }
+        (Some(before), None) => Some(before),
+        (None, Some(after)) => Some(after),
+        (None, None) => None,
+    }
+}
+
 fn dead_reckon_location(report: &LocationReport, query_timestamp: Timestamp) -> Option<(f64, f64)> {
     let sog = report.sog?;
     let cog = report.cog?;
@@ -420,7 +438,7 @@ fn estimate_projection(
             let (lat, lon) = interpolate_location(before, after, query_timestamp)?;
             let fraction =
                 interpolation_fraction(before.timestamp, after.timestamp, query_timestamp)?;
-            let cog = interpolate_optional_value(before.cog, after.cog, fraction);
+            let cog = interpolate_optional_heading(before.cog, after.cog, fraction);
             let sog = interpolate_optional_value(before.sog, after.sog, fraction);
 
             Some(ProjectionEstimate {
