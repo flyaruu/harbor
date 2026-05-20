@@ -1,3 +1,13 @@
+#
+
+Download map data here:
+
+https://download.geofabrik.de/europe/netherlands.html
+
+Customize and call this script: convert.sh
+
+Customize compose.yml to point to the generated file
+
 Get a SpacetimeDB Rust app running in under 5 minutes.
 
 ## Prerequisites

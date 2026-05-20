@@ -1,4 +1,18 @@
 [workspace]
-members = ["location-source", "location-viewer"]
+members = ["harbor", "location-source", "location-viewer", "osm_pbf_processor"]
 exclude = ["spacetimedb"]
 resolver = "2"
+
+[workspace.dependencies]
+anyhow = "1.0.102"
+serde = { version = "1.0.228", features = ["derive"] }
+spacetimedb-sdk = { version = "2.2.*" }
+
+[patch.crates-io]
+bevy_stdb = { path = "harbor/vendor/bevy_stdb" }
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
