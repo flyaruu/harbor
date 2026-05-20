@@ -46,6 +46,42 @@ http://localhost:8080/data/v3/14/8396/5421.pbf
 
 Server mode converts tiles in memory and returns the GLB bytes directly. It does not write output files.
 
+## Docker Compose
+
+Start the tileserver and GLB proxy together with:
+
+```bash
+docker compose up --build tileserver-gl osm_pbf_processor
+```
+
+Then request GLB tiles from:
+
+```text
+http://localhost:8081/data/13/4214/2702.glb
+```
+
+The Compose service uses `osm_pbf_processor/osm_pbf_processor.compose.toml`, which points the backend at:
+
+```text
+http://tileserver-gl:8080
+```
+
+This keeps the checked-in local config using `http://localhost:8080` for non-container runs.
+
+To run `location-source` in Compose, provide both placeholders and start it with SpacetimeDB:
+
+```bash
+AISSTREAM_API_KEY=replace-with-your-aisstream-api-key \
+SPACETIMEDB_DB_NAME=replace-with-your-spacetimedb-db-name \
+docker compose up --build spacetimedb location-source
+```
+
+Inside Compose, `location-source` connects to SpacetimeDB at:
+
+```text
+http://spacetimedb:3000
+```
+
 ## Config
 
 Configuration is read from `osm_pbf_processor.toml`.

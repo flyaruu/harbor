@@ -1,3 +1,7 @@
+# Environment placeholders for optional services:
+# AISSTREAM_API_KEY=replace-with-your-aisstream-api-key
+# SPACETIMEDB_DB_NAME=replace-with-your-spacetimedb-db-name
+
 services:
   spacetimedb:
     image: clockworklabs/spacetime
@@ -17,6 +21,33 @@ services:
       - "8080:8080"
     volumes:
       - ./data:/data
+    restart: unless-stopped
+
+  osm_pbf_processor:
+    build:
+      context: .
+      dockerfile: osm_pbf_processor/Dockerfile
+    container_name: osm_pbf_processor
+    command: ["./osm_pbf_processor", "--config", "/app/osm_pbf_processor.toml", "--server"]
+    depends_on:
+      - tileserver-gl
+    ports:
+      - "8081:8081"
+    volumes:
+      - ./osm_pbf_processor/osm_pbf_processor.compose.toml:/app/osm_pbf_processor.toml:ro
+    restart: unless-stopped
+
+  location-source:
+    build:
+      context: .
+      dockerfile: location-source/Dockerfile
+    container_name: location-source
+    depends_on:
+      - spacetimedb
+    environment:
+      AISSTREAM_API_KEY: ${AISSTREAM_API_KEY:-replace-with-your-aisstream-api-key}
+      SPACETIMEDB_HOST: http://spacetimedb:3000
+      SPACETIMEDB_DB_NAME: ${SPACETIMEDB_DB_NAME:-ship-spacetime}
     restart: unless-stopped
 
 volumes:
