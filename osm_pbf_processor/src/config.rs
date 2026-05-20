@@ -10,6 +10,7 @@ const DEFAULT_CONFIG_PATH: &str = "osm_pbf_processor.toml";
 #[serde(default)]
 pub(crate) struct AppConfig {
     pub(crate) conversion: ConversionConfig,
+    pub(crate) server: ServerConfig,
 }
 
 impl AppConfig {
@@ -34,6 +35,24 @@ pub(crate) struct ConversionConfig {
     pub(crate) transportation: TransportationConfig,
     pub(crate) building: BuildingConfig,
     pub(crate) water: WaterConfig,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(default)]
+pub(crate) struct ServerConfig {
+    pub(crate) bind: String,
+    pub(crate) port: u16,
+    pub(crate) backend: String,
+}
+
+impl Default for ServerConfig {
+    fn default() -> Self {
+        Self {
+            bind: "0.0.0.0".to_string(),
+            port: 8081,
+            backend: "http://localhost:8080".to_string(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
@@ -216,6 +235,11 @@ mod tests {
             xy_scale = 0.25
             surface_color = [0.2, 0.4, 0.9, 0.5]
             volume_color = [0.38, 0.33, 0.26, 1.0]
+
+            [server]
+            bind = "127.0.0.1"
+            port = 9000
+            backend = "http://tiles.example.com"
             "#,
         )
         .expect("config should parse");
@@ -259,6 +283,9 @@ mod tests {
             config.conversion.water.volume_color,
             [0.38, 0.33, 0.26, 1.0]
         );
+        assert_eq!(config.server.bind, "127.0.0.1");
+        assert_eq!(config.server.port, 9000);
+        assert_eq!(config.server.backend, "http://tiles.example.com");
     }
 
     #[test]
@@ -270,5 +297,6 @@ mod tests {
         assert_eq!(config.conversion.water, WaterConfig::default());
         assert!(config.conversion.output.is_none());
         assert!(config.conversion.output_glb.is_none());
+        assert_eq!(config.server, ServerConfig::default());
     }
 }

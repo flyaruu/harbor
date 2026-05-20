@@ -2,6 +2,11 @@
 # Defaults to output/<zoom>/<x>_<y>.glb for URL tiles when omitted.
 output = "harbor/assets/tiles/"
 
+[server]
+bind = "0.0.0.0"
+port = 8081
+backend = "http://localhost:8080"
+
 [conversion.simplify]
 enabled = true
 tolerance = 8.0

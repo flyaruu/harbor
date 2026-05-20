@@ -14,6 +14,7 @@ pub(crate) struct TileRequest {
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum InputSource {
     File(PathBuf),
+    Server,
     Url {
         base_url: String,
         zoom: u8,
@@ -38,6 +39,7 @@ impl CliArgs {
             [program, rest @ ..] => {
                 let mut config_path = None;
                 let mut base_url = None;
+                let mut server_mode = false;
                 let mut zoom = 14u8;
                 let mut positionals = Vec::new();
                 let mut index = 0usize;
@@ -60,6 +62,10 @@ impl CliArgs {
                             base_url = Some(value.clone());
                             index += 2;
                         }
+                        "--server" => {
+                            server_mode = true;
+                            index += 1;
+                        }
                         "--zoom" => {
                             let Some(value) = rest.get(index + 1) else {
                                 print_usage(program);
@@ -81,7 +87,14 @@ impl CliArgs {
                     }
                 }
 
-                let input = if let Some(base_url) = base_url {
+                let input = if server_mode {
+                    if base_url.is_some() || !positionals.is_empty() {
+                        print_usage(program);
+                        bail!("server mode does not accept --url or tile coordinates")
+                    }
+
+                    InputSource::Server
+                } else if let Some(base_url) = base_url {
                     if positionals.len() != 2 {
                         print_usage(program);
                         bail!("url mode expects x and y coordinates")
@@ -116,6 +129,7 @@ impl CliArgs {
                 fetch_url: None,
                 file_path: Some(path.clone()),
             }],
+            InputSource::Server => Vec::new(),
             InputSource::Url {
                 base_url,
                 zoom,
@@ -148,6 +162,7 @@ fn print_usage(program: &str) {
     eprintln!(
         "   or: {program} [--config <config.toml>] --url <server-url> <x|x0-x1> <y|y0-y1> [--zoom <z>]"
     );
+    eprintln!("   or: {program} [--config <config.toml>] --server");
     eprintln!("Prints a decoded Mapbox Vector Tile report and exports water geometry to GLB.");
 }
 
@@ -234,6 +249,54 @@ mod tests {
                 x_range: 8396..=8396,
                 y_range: 5421..=5421,
             }
+        );
+    }
+
+    #[test]
+    fn parses_cli_server_mode() {
+        let args = vec!["osm_pbf_processor".to_string(), "--server".to_string()];
+
+        let cli = CliArgs::parse(&args)
+            .expect("cli should parse")
+            .expect("cli args should be present");
+
+        assert_eq!(cli.input, InputSource::Server);
+    }
+
+    #[test]
+    fn rejects_server_mode_with_url() {
+        let args = vec![
+            "osm_pbf_processor".to_string(),
+            "--server".to_string(),
+            "--url".to_string(),
+            "http://localhost:8080/data".to_string(),
+        ];
+
+        let error = CliArgs::parse(&args).expect_err("cli should reject mixed server/url mode");
+
+        assert!(
+            error
+                .to_string()
+                .contains("server mode does not accept --url or tile coordinates")
+        );
+    }
+
+    #[test]
+    fn rejects_server_mode_with_positionals() {
+        let args = vec![
+            "osm_pbf_processor".to_string(),
+            "--server".to_string(),
+            "8396".to_string(),
+            "5421".to_string(),
+        ];
+
+        let error =
+            CliArgs::parse(&args).expect_err("cli should reject positionals in server mode");
+
+        assert!(
+            error
+                .to_string()
+                .contains("server mode does not accept --url or tile coordinates")
         );
     }
 

@@ -15,13 +15,19 @@ pub(crate) struct SceneMesh<'a> {
 }
 
 pub(crate) fn write_glb(path: &Path, meshes: &[SceneMesh<'_>]) -> Result<()> {
-    if meshes.is_empty() {
-        anyhow::bail!("no meshes were provided for GLB export");
-    }
-
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)
             .with_context(|| format!("failed to create output directory {}", parent.display()))?;
+    }
+
+    let glb = build_glb_bytes(meshes)?;
+
+    fs::write(path, glb).with_context(|| format!("failed to write {}", path.display()))
+}
+
+pub(crate) fn build_glb_bytes(meshes: &[SceneMesh<'_>]) -> Result<Vec<u8>> {
+    if meshes.is_empty() {
+        anyhow::bail!("no meshes were provided for GLB export");
     }
 
     let mut binary = Vec::new();
@@ -74,7 +80,7 @@ pub(crate) fn write_glb(path: &Path, meshes: &[SceneMesh<'_>]) -> Result<()> {
     glb.extend_from_slice(b"BIN\0");
     glb.extend_from_slice(&binary);
 
-    fs::write(path, glb).with_context(|| format!("failed to write {}", path.display()))
+    Ok(glb)
 }
 
 struct MeshSpec {
@@ -250,12 +256,11 @@ fn pad_bytes(bytes: &mut Vec<u8>, alignment: usize, value: u8) {
 #[cfg(test)]
 mod tests {
     use std::fs;
-    use std::path::Path;
+    use std::path::PathBuf;
 
     use super::*;
 
-    #[test]
-    fn writes_valid_glb_header() {
+    fn test_mesh() -> MeshBuffers {
         let mut mesh = MeshBuffers::default();
         mesh.push_triangle(
             [0.0, 0.0, 0.0],
@@ -263,11 +268,22 @@ mod tests {
             [0.0, 0.0, 1.0],
             [0.0, 1.0, 0.0],
         );
+        mesh
+    }
 
-        let output =
-            Path::new("/var/folders/s5/f3fvtwcx4j7f3clmdcn12cww0000gn/T/opencode/test-water.glb");
+    fn test_output_path(name: &str) -> PathBuf {
+        std::env::temp_dir()
+            .join("osm_pbf_processor_tests")
+            .join(name)
+    }
+
+    #[test]
+    fn writes_valid_glb_header() {
+        let mesh = test_mesh();
+
+        let output = test_output_path("test-water.glb");
         write_glb(
-            output,
+            &output,
             &[SceneMesh {
                 mesh: &mesh,
                 material_tag: "test_water",
@@ -276,29 +292,21 @@ mod tests {
         )
         .expect("glb should write");
 
-        let bytes = fs::read(output).expect("glb should exist");
+        let bytes = fs::read(&output).expect("glb should exist");
         assert_eq!(&bytes[..4], b"glTF");
     }
 
     #[test]
     fn creates_parent_directories_before_writing() {
-        let mut mesh = MeshBuffers::default();
-        mesh.push_triangle(
-            [0.0, 0.0, 0.0],
-            [1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0],
-            [0.0, 1.0, 0.0],
-        );
+        let mesh = test_mesh();
 
-        let output = Path::new(
-            "/var/folders/s5/f3fvtwcx4j7f3clmdcn12cww0000gn/T/opencode/output/14/8396_5421.glb",
-        );
+        let output = test_output_path("output/14/8396_5421.glb");
         if let Some(parent) = output.parent() {
             let _ = fs::remove_dir_all(parent);
         }
 
         write_glb(
-            output,
+            &output,
             &[SceneMesh {
                 mesh: &mesh,
                 material_tag: "test_water",
@@ -308,5 +316,19 @@ mod tests {
         .expect("glb should write into nested directory");
 
         assert!(output.exists());
+    }
+
+    #[test]
+    fn builds_glb_bytes_in_memory() {
+        let mesh = test_mesh();
+
+        let bytes = build_glb_bytes(&[SceneMesh {
+            mesh: &mesh,
+            material_tag: "test_water",
+            base_color: [0.1, 0.35, 0.8, 1.0],
+        }])
+        .expect("glb bytes should build");
+
+        assert_eq!(&bytes[..4], b"glTF");
     }
 }
