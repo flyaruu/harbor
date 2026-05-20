@@ -1,5 +1,6 @@
 target
 output
 .DS_Store
+harbor/assets/tiles/
 
 spacetime.local.json

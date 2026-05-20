@@ -1,0 +1,477 @@
+use crate::{
+    channel_bridge::ChannelBridgePlugin,
+    connection::{ConnectionDriver, ReconnectPlugin, StdbConnectionPlugin, StdbReconnectOptions},
+    message::RowEvent,
+    set::StdbSet,
+    subscription::{SubscriptionsInitializer, SubscriptionsPlugin},
+    table::{
+        EventTableBinder, StdbTablePlugin, TableBindCallback, TableBinder,
+        TableRegistrationCallback, TableWithoutPkBinder, ViewBinder, register_event_table,
+        register_table, register_table_without_pk, register_view,
+    },
+};
+use bevy_app::{App, Plugin, PreStartup, PreUpdate};
+use bevy_ecs::prelude::IntoScheduleConfigs;
+use spacetimedb_sdk::{
+    __codegen::{DbConnection, InModule, SpacetimeModule, SubscriptionBuilder},
+    Compression, DbContext, SubscriptionHandle,
+};
+use std::{hash::Hash, sync::Arc};
+
+/// Primary plugin for configuring `bevy_stdb`.
+///
+/// # Example
+///
+/// ```ignore
+/// app.add_plugins(
+///     StdbPlugin::<DbConnection, Module>::default()
+///         .with_database_name("my_module")
+///         .with_uri("http://localhost:3000")
+///         .with_background_driver(DbConnection::run_threaded)
+///         .with_reconnect(StdbReconnectOptions::default())
+///         .with_subscriptions::<SubKey>()
+///         .add_table::<ChatMessageRow>(|reg, db| reg.bind(db.chat_message()))
+/// )
+/// .add_systems(Update, subscribe_on_connected);
+///
+/// fn subscribe_on_connected(
+///     mut connected: ReadStdbConnectedMessage,
+///     mut subs: ResMut<StdbSubscriptions<SubKey, Module>>,
+/// ) {
+///     if connected.read().next().is_some() {
+///         subs.subscribe_sql(SubKey::Chat, "SELECT * FROM chat_message");
+///     }
+/// }
+/// ```
+///
+/// # Panics
+///
+/// Panics during [`Plugin::build`] if required connection settings are
+/// missing.
+pub struct StdbPlugin<
+    C: DbConnection<Module = M> + DbContext + Send + Sync,
+    M: SpacetimeModule<DbConnection = C>,
+> {
+    database_name: Option<String>,
+    uri: Option<String>,
+    token: Option<String>,
+    compression: Option<Compression>,
+    eager_connection: bool,
+    driver: Option<ConnectionDriver<C>>,
+    reconnect_options: Option<StdbReconnectOptions>,
+    subscriptions_initializer: Option<Arc<SubscriptionsInitializer>>,
+    table_registrations: Vec<Arc<TableRegistrationCallback>>,
+    table_bindings: Vec<Arc<TableBindCallback<C>>>,
+}
+
+impl<C: DbConnection<Module = M> + DbContext + Send + Sync, M: SpacetimeModule<DbConnection = C>>
+    Default for StdbPlugin<C, M>
+{
+    fn default() -> Self {
+        Self {
+            database_name: None,
+            uri: None,
+            token: None,
+            compression: None,
+            eager_connection: false,
+            driver: None,
+            reconnect_options: None,
+            subscriptions_initializer: None,
+            table_registrations: Vec::new(),
+            table_bindings: Vec::new(),
+        }
+    }
+}
+
+impl<C: DbConnection<Module = M> + DbContext + Send + Sync, M: SpacetimeModule<DbConnection = C>>
+    StdbPlugin<C, M>
+{
+    /// Starts the initial connection when the plugin is built.
+    ///
+    /// Without this option, start connections from a system with [`StdbCommands::connect`](crate::prelude::StdbCommands::connect).
+    pub fn with_eager_connection(mut self) -> Self {
+        self.eager_connection = true;
+        self
+    }
+
+    /// Sets the function used to drive the connection from the Bevy schedule.
+    ///
+    /// Use this when you want the active connection to be progressed from Bevy's
+    /// schedules instead of in a background task. Internally, `bevy_stdb` runs
+    /// this driver from [`PreUpdate`](bevy_app::PreUpdate).
+    ///
+    /// Exactly one connection driver must be configured for the plugin.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// StdbPlugin::<DbConnection, RemoteModule>::default()
+    ///     .with_database_name("my_module")
+    ///     .with_uri("http://localhost:3000")
+    ///     .with_frame_driver(DbConnection::frame_tick)
+    /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if a connection driver has already been configured.
+    pub fn with_frame_driver(mut self, frame_tick: fn(&C) -> spacetimedb_sdk::Result<()>) -> Self {
+        assert!(
+            self.driver.is_none(),
+            "only one connection driver may be configured"
+        );
+        self.driver = Some(ConnectionDriver::FrameTick(frame_tick));
+        self
+    }
+
+    /// Sets the function used to drive the connection in the background.
+    ///
+    /// Use this when the underlying SDK connection should manage its own
+    /// progress outside the Bevy frame loop. The return value of
+    /// `background_driver` is ignored.
+    ///
+    /// Exactly one connection driver must be configured for the plugin.
+    ///
+    /// # Examples
+    ///
+    /// Native targets typically use `run_threaded`:
+    ///
+    /// ```ignore
+    /// StdbPlugin::<DbConnection, RemoteModule>::default()
+    ///     .with_database_name("my_module")
+    ///     .with_uri("http://localhost:3000")
+    ///     .with_background_driver(DbConnection::run_threaded)
+    /// ```
+    ///
+    /// Browser targets use the generated async helper instead:
+    ///
+    /// ```ignore
+    /// StdbPlugin::<DbConnection, RemoteModule>::default()
+    ///     .with_database_name("my_module")
+    ///     .with_uri("http://localhost:3000")
+    ///     .with_background_driver(DbConnection::run_background_task)
+    /// ```
+    ///
+    /// To support both, select the driver with `cfg`:
+    ///
+    /// ```ignore
+    /// #[cfg(target_arch = "wasm32")]
+    /// let driver = DbConnection::run_background_task;
+    /// #[cfg(not(target_arch = "wasm32"))]
+    /// let driver = DbConnection::run_threaded;
+    ///
+    /// StdbPlugin::<DbConnection, RemoteModule>::default()
+    ///     .with_database_name("my_module")
+    ///     .with_uri("http://localhost:3000")
+    ///     .with_background_driver(driver)
+    /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if a connection driver has already been configured.
+    pub fn with_background_driver<R>(mut self, background_driver: fn(&C) -> R) -> Self
+    where
+        R: 'static,
+    {
+        assert!(
+            self.driver.is_none(),
+            "only one connection driver may be configured"
+        );
+        self.driver = Some(ConnectionDriver::Background(Arc::new(move |conn: &C| {
+            let _ = background_driver(conn);
+        })));
+        self
+    }
+
+    /// Sets the remote database name.
+    ///
+    /// # Panics
+    ///
+    /// Panics if called more than once.
+    pub fn with_database_name(mut self, name: impl Into<String>) -> Self {
+        assert!(
+            self.database_name.is_none(),
+            "`with_database_name()` may only be called once"
+        );
+        self.database_name = Some(name.into());
+        self
+    }
+
+    /// Sets the SpacetimeDB host URI.
+    ///
+    /// # Panics
+    ///
+    /// Panics if called more than once.
+    pub fn with_uri(mut self, uri: impl Into<String>) -> Self {
+        assert!(self.uri.is_none(), "`with_uri()` may only be called once");
+        self.uri = Some(uri.into());
+        self
+    }
+
+    /// Sets the authentication token used for the initial connection.
+    ///
+    /// If a token is provided at runtime, the most recently provided token becomes the
+    /// stored token used for subsequent reconnect attempts.
+    ///
+    /// # Panics
+    ///
+    /// Panics if called more than once.
+    pub fn with_token(mut self, token: impl Into<String>) -> Self {
+        assert!(
+            self.token.is_none(),
+            "`with_token()` may only be called once"
+        );
+        self.token = Some(token.into());
+        self
+    }
+
+    /// Sets the connection compression mode.
+    ///
+    /// # Panics
+    ///
+    /// Panics if called more than once.
+    pub fn with_compression(mut self, compression: Compression) -> Self {
+        assert!(
+            self.compression.is_none(),
+            "`with_compression()` may only be called once"
+        );
+        self.compression = Some(compression);
+        self
+    }
+
+    /// Registers a table with a primary key.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// .add_table::<PlayerRow>(|reg, db| reg.bind(db.player_info()))
+    /// ```
+    pub fn add_table<TRow>(
+        mut self,
+        bind: impl for<'db> Fn(TableBinder<'_, TRow>, &'db C::DbView) + Send + Sync + 'static,
+    ) -> Self
+    where
+        TRow: Send + Sync + Clone + InModule + 'static,
+        RowEvent<TRow>: Send + Sync,
+    {
+        self.table_registrations
+            .push(Arc::new(register_table::<TRow>));
+        self.table_bindings.push(Arc::new(move |world, db| {
+            let reg = TableBinder::<TRow>::new(world);
+            bind(reg, db);
+        }));
+        self
+    }
+
+    /// Registers a table without a primary key.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// .add_table_without_pk::<NearbyMonsterRow>(|reg, db| {
+    ///     reg.bind(db.nearby_monsters())
+    /// })
+    /// ```
+    pub fn add_table_without_pk<TRow>(
+        mut self,
+        bind: impl for<'db> Fn(TableWithoutPkBinder<'_, TRow>, &'db C::DbView) + Send + Sync + 'static,
+    ) -> Self
+    where
+        TRow: Send + Sync + Clone + InModule + 'static,
+        RowEvent<TRow>: Send + Sync,
+    {
+        self.table_registrations
+            .push(Arc::new(register_table_without_pk::<TRow>));
+        self.table_bindings.push(Arc::new(move |world, db| {
+            let reg = TableWithoutPkBinder::<TRow>::new(world);
+            bind(reg, db);
+        }));
+        self
+    }
+
+    /// Registers a view.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// .add_view::<CharacterRow>(|reg, db| reg.bind(db.character_selection_screen_view()))
+    /// ```
+    pub fn add_view<TRow>(
+        mut self,
+        bind: impl for<'db> Fn(ViewBinder<'_, TRow>, &'db C::DbView) + Send + Sync + 'static,
+    ) -> Self
+    where
+        TRow: Send + Sync + Clone + InModule + 'static,
+        RowEvent<TRow>: Send + Sync,
+    {
+        self.table_registrations
+            .push(Arc::new(register_view::<TRow>));
+        self.table_bindings.push(Arc::new(move |world, db| {
+            let reg = ViewBinder::<TRow>::new(world);
+            bind(reg, db);
+        }));
+        self
+    }
+
+    /// Registers an event table.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// .add_event_table::<LogEvent>(|reg, db| reg.bind(db.log_events()))
+    /// ```
+    pub fn add_event_table<TRow>(
+        mut self,
+        bind: impl for<'db> Fn(EventTableBinder<'_, TRow>, &'db C::DbView) + Send + Sync + 'static,
+    ) -> Self
+    where
+        TRow: Send + Sync + Clone + InModule + 'static,
+        RowEvent<TRow>: Send + Sync,
+    {
+        self.table_registrations
+            .push(Arc::new(register_event_table::<TRow>));
+        self.table_bindings.push(Arc::new(move |world, db| {
+            let reg = EventTableBinder::<TRow>::new(world);
+            bind(reg, db);
+        }));
+        self
+    }
+
+    /// Enables the subscription subsystem.
+    ///
+    /// This installs [`crate::subscription::StdbSubscriptions`] as a Bevy
+    /// resource so subscriptions can be queued at runtime from normal Bevy
+    /// systems, for example in response to
+    /// [`crate::prelude::StdbConnectedMessage`].
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// .with_subscriptions::<SubKey>()
+    /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if called more than once.
+    pub fn with_subscriptions<K>(mut self) -> Self
+    where
+        K: Eq + Hash + Clone + Send + Sync + 'static,
+        M::SubscriptionHandle: SubscriptionHandle + Send + Sync + 'static,
+        C: DbConnection<Module = M>
+            + DbContext<SubscriptionBuilder = SubscriptionBuilder<M>>
+            + Send
+            + Sync
+            + 'static,
+    {
+        assert!(
+            self.subscriptions_initializer.is_none(),
+            "`with_subscriptions()` may only be called once"
+        );
+
+        self.subscriptions_initializer = Some(Arc::new(|app: &mut App| {
+            app.add_plugins(SubscriptionsPlugin::<K, C, M>::default());
+        }));
+
+        self
+    }
+
+    /// Enables automatic reconnects with the given options.
+    ///
+    /// When reconnect is enabled, reconnect attempts use the most recently
+    /// stored token. That token comes from either [`Self::with_token`] or a
+    /// later runtime token update with `token: Some(...)`.
+    ///
+    /// On a successful reconnect, table callbacks are re-bound and queued
+    /// subscriptions are re-applied automatically.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use std::time::Duration;
+    ///
+    /// // Use defaults (1s initial delay, 1.5x backoff, 15s max, infinite retries):
+    /// .with_reconnect(StdbReconnectOptions::default())
+    ///
+    /// // Or customize:
+    /// .with_reconnect(StdbReconnectOptions {
+    ///     initial_delay: Duration::from_secs(2),
+    ///     max_attempts: 5,
+    ///     backoff_factor: 2.0,
+    ///     max_delay: Duration::from_secs(30),
+    /// })
+    /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if called more than once.
+    pub fn with_reconnect(mut self, reconnect_config: StdbReconnectOptions) -> Self {
+        assert!(
+            self.reconnect_options.is_none(),
+            "`with_reconnect()` may only be called once"
+        );
+        self.reconnect_options = Some(reconnect_config);
+        self
+    }
+}
+
+impl<
+    C: DbConnection<Module = M> + DbContext + Send + Sync + 'static,
+    M: SpacetimeModule<DbConnection = C> + 'static,
+> Plugin for StdbPlugin<C, M>
+{
+    /// Installs the configured `bevy_stdb` plugins and resources.
+    ///
+    /// Exactly one connection driver must be configured via
+    /// [`StdbPlugin::with_background_driver`] or [`StdbPlugin::with_frame_driver`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if any required configuration is missing:
+    ///
+    /// - database name
+    /// - URI
+    /// - connection driver
+    fn build(&self, app: &mut App) {
+        app.add_plugins(ChannelBridgePlugin);
+
+        app.configure_sets(PreStartup, StdbSet::Connection);
+        app.configure_sets(
+            PreUpdate,
+            (
+                StdbSet::Flush,
+                StdbSet::StateSync,
+                StdbSet::Connection,
+                StdbSet::Subscriptions,
+            )
+                .chain(),
+        );
+
+        if let Some(reconnect_options) = self.reconnect_options.clone() {
+            app.add_plugins(ReconnectPlugin::<C, M>::new(reconnect_options));
+        }
+
+        if let Some(init) = self.subscriptions_initializer.clone() {
+            init(app);
+        }
+
+        app.add_plugins(StdbConnectionPlugin::<C, M> {
+            database_name: self
+                .database_name
+                .clone()
+                .expect("No database name set. Use with_database_name()"),
+            uri: self.uri.clone().expect("No uri set. Use with_uri()"),
+            token: self.token.clone(),
+            eager_connection: self.eager_connection,
+            driver: self.driver.clone().or_else(|| {
+                panic!(
+                    "No connection driver set. Use with_background_driver() or with_frame_driver()"
+                )
+            }),
+            compression: self.compression.unwrap_or_default(),
+        });
+
+        app.add_plugins(StdbTablePlugin::<C, M>::new(
+            self.table_bindings.clone(),
+            self.table_registrations.clone(),
+        ));
+    }
+}
