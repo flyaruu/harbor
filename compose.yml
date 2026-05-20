@@ -9,5 +9,15 @@ services:
       - spacetimedb-data:/root/.local/share/spacetime/data
     restart: unless-stopped
 
+  tileserver-gl:
+    image: maptiler/tileserver-gl-light:latest
+    container_name: tileserver-gl
+    command: ["--file", "/data/current.pmtiles"]
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
+
 volumes:
   spacetimedb-data:
