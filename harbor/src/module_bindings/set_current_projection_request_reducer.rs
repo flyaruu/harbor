@@ -58,9 +58,11 @@ pub trait set_current_projection_request {
         query_timestamp: __sdk::Timestamp,
         visibility_window_micros: i64,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -70,9 +72,11 @@ impl set_current_projection_request for super::RemoteReducers {
         query_timestamp: __sdk::Timestamp,
         visibility_window_micros: i64,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()> {
         self.imp.invoke_reducer_with_callback(
             SetCurrentProjectionRequestArgs {
