@@ -16,7 +16,9 @@ pub fn spawn_bridge(
         ChildOf(map_root.0),
         SceneRoot(asset_server.load(GltfAssetLabel::Scene(0).from_asset("models/erasmus.glb"))),
         Transform::from_translation(ERASMUS_BRIDGE_TRANSLATION)
-            .with_rotation(Quat::from_rotation_y(ERASMUS_BRIDGE_YAW_DEGREES.to_radians()))
+            .with_rotation(Quat::from_rotation_y(
+                ERASMUS_BRIDGE_YAW_DEGREES.to_radians(),
+            ))
             .with_scale(ERASMUS_BRIDGE_SCALE),
         GlobalTransform::default(),
         Visibility::default(),

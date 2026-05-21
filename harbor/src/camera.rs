@@ -1,6 +1,7 @@
 use bevy::core_pipeline::prepass::DepthPrepass;
 use bevy::ecs::system::Commands;
 use bevy::input::mouse::MouseMotion;
+use bevy::math::DVec2;
 use bevy::prelude::*;
 use bevy_panorbit_wasd_camera::PanOrbitCamera;
 
@@ -18,23 +19,62 @@ const CAMERA_PRESET_FOCUS_EPSILON: f32 = 0.5;
 const CAMERA_FOLLOW_DISTANCE_METERS: f32 = 300.0;
 const CAMERA_FOLLOW_HEIGHT_METERS: f32 = 140.0;
 const CAMERA_FOLLOW_FOCUS_HEIGHT_METERS: f32 = 10.5;
-const CAMERA_PRESET_1: CameraPreset = CameraPreset {
-    position: Vec3::new(19911.994, 463.758, 12811.165),
-    focus: Vec3::new(20657.500, 101.591, 12354.323),
+const CAMERA_PRESET_1: TileSpaceCameraPreset = TileSpaceCameraPreset {
+    position: TileSpacePoint {
+        tile: DVec2::new(8396.138673, 5418.872274),
+        height: 463.758,
+    },
+    focus: TileSpacePoint {
+        tile: DVec2::new(8395.956665, 5418.983808),
+        height: 101.591,
+    },
 };
-const CAMERA_PRESET_2: CameraPreset = CameraPreset {
-    position: Vec3::new(78719.781, 4119.730, 23509.740),
-    focus: Vec3::new(87854.555, 100.000, 27452.068),
+const CAMERA_PRESET_2: TileSpaceCameraPreset = TileSpaceCameraPreset {
+    position: TileSpacePoint {
+        tile: DVec2::new(8381.781303, 5416.260317),
+        height: 4119.730,
+    },
+    focus: TileSpacePoint {
+        tile: DVec2::new(8379.551134, 5415.297835),
+        height: 100.000,
+    },
 };
-const CAMERA_PRESET_3: CameraPreset = CameraPreset {
-    position: Vec3::new(116714.328, 7522.703, 28497.092),
-    focus: Vec3::new(108762.227, 100.000, 28145.459),
+const CAMERA_PRESET_3: TileSpaceCameraPreset = TileSpaceCameraPreset {
+    position: TileSpacePoint {
+        tile: DVec2::new(8372.505291, 5415.042702),
+        height: 7522.703,
+    },
+    focus: TileSpacePoint {
+        tile: DVec2::new(8374.446722, 5415.128550),
+        height: 100.000,
+    },
 };
 
 #[derive(Clone, Copy)]
 pub struct CameraPreset {
     pub position: Vec3,
     pub focus: Vec3,
+}
+
+#[derive(Clone, Copy)]
+struct TileSpacePoint {
+    tile: DVec2,
+    height: f32,
+}
+
+#[derive(Clone, Copy)]
+struct TileSpaceCameraPreset {
+    position: TileSpacePoint,
+    focus: TileSpacePoint,
+}
+
+impl TileSpaceCameraPreset {
+    fn resolve(self, projection: TileWorldProjection) -> CameraPreset {
+        CameraPreset {
+            position: tile_space_point_to_world(projection, self.position),
+            focus: tile_space_point_to_world(projection, self.focus),
+        }
+    }
 }
 
 #[derive(Resource)]
@@ -67,9 +107,9 @@ pub fn setup_camera(
     let default_preset = default_camera_preset(*projection);
 
     commands.insert_resource(CameraPresets([
-        CAMERA_PRESET_1,
-        CAMERA_PRESET_2,
-        CAMERA_PRESET_3,
+        CAMERA_PRESET_1.resolve(*projection),
+        CAMERA_PRESET_2.resolve(*projection),
+        CAMERA_PRESET_3.resolve(*projection),
         default_preset,
         default_preset,
     ]));
@@ -192,7 +232,8 @@ pub fn activate_camera_presets(
         return;
     };
 
-    let (yaw, pitch, radius) = calculate_orbit_from_translation_and_focus(preset.position, preset.focus);
+    let (yaw, pitch, radius) =
+        calculate_orbit_from_translation_and_focus(preset.position, preset.focus);
     let (_, mut pan_orbit) = camera.into_inner();
 
     pan_orbit.target_focus = preset.focus;
@@ -220,7 +261,9 @@ pub fn update_follow_selected_ship_camera_target(
         CameraTransitionMode::AimSelectedShip => {
             aim_selected_ship_preset(&projection, &ship_info, camera.translation())
         }
-        CameraTransitionMode::FollowSelectedShip => follow_selected_ship_preset(&projection, &ship_info),
+        CameraTransitionMode::FollowSelectedShip => {
+            follow_selected_ship_preset(&projection, &ship_info)
+        }
         CameraTransitionMode::Preset => None,
     };
 
@@ -275,8 +318,10 @@ pub fn apply_camera_transition_targets(
         return;
     }
 
-    let (yaw, pitch, radius) =
-        calculate_orbit_from_translation_and_focus(transition.target_position, transition.target_focus);
+    let (yaw, pitch, radius) = calculate_orbit_from_translation_and_focus(
+        transition.target_position,
+        transition.target_focus,
+    );
     let mut pan_orbit = camera.into_inner();
     pan_orbit.target_focus = transition.target_focus;
     pan_orbit.target_yaw = yaw;
@@ -293,9 +338,12 @@ pub fn finish_camera_preset_transition(
     }
 
     let (global_transform, pan_orbit) = camera.into_inner();
-    let position_done = global_transform.translation().distance(transition.target_position)
+    let position_done = global_transform
+        .translation()
+        .distance(transition.target_position)
         <= CAMERA_PRESET_POSITION_EPSILON;
-    let focus_done = pan_orbit.focus.distance(transition.target_focus) <= CAMERA_PRESET_FOCUS_EPSILON;
+    let focus_done =
+        pan_orbit.focus.distance(transition.target_focus) <= CAMERA_PRESET_FOCUS_EPSILON;
 
     if position_done && focus_done {
         transition.active = false;
@@ -305,6 +353,7 @@ pub fn finish_camera_preset_transition(
 pub fn log_camera_pose_every_five_seconds(
     time: Res<Time>,
     mut timer: ResMut<CameraPoseLogTimer>,
+    projection: Res<TileWorldProjection>,
     camera: Single<(&GlobalTransform, &Transform, &PanOrbitCamera), With<Camera3d>>,
 ) {
     if !timer.0.tick(time.delta()).just_finished() {
@@ -317,10 +366,14 @@ pub fn log_camera_pose_every_five_seconds(
     let up = transform.up().as_vec3();
     let focus = pan_orbit.focus;
     let rotation = transform.rotation;
+    let tile_space_position = world_to_tile_space_point(*projection, position);
+    let tile_space_focus = world_to_tile_space_point(*projection, focus);
 
     info!(
         position = ?position,
         focus = ?focus,
+        tile_position = ?tile_space_position.tile,
+        tile_focus = ?tile_space_focus.tile,
         forward = ?forward,
         up = ?up,
         rotation = ?rotation,
@@ -333,6 +386,15 @@ pub fn log_camera_pose_every_five_seconds(
             focus.y,
             focus.z,
         ),
+        tile_preset = %format!(
+            "TileSpaceCameraPreset {{ position: TileSpacePoint {{ tile: DVec2::new({:.6}, {:.6}), height: {:.3} }}, focus: TileSpacePoint {{ tile: DVec2::new({:.6}, {:.6}), height: {:.3} }} }}",
+            tile_space_position.tile.x,
+            tile_space_position.tile.y,
+            tile_space_position.height,
+            tile_space_focus.tile.x,
+            tile_space_focus.tile.y,
+            tile_space_focus.height,
+        ),
         "camera pose snapshot"
     );
 }
@@ -343,6 +405,18 @@ fn default_camera_preset(projection: TileWorldProjection) -> CameraPreset {
     let focus = position + Vec3::Z * CAMERA_LOOK_DISTANCE_METERS;
 
     CameraPreset { position, focus }
+}
+
+fn tile_space_point_to_world(projection: TileWorldProjection, point: TileSpacePoint) -> Vec3 {
+    let world = projection.tile_to_world(point.tile);
+    Vec3::new(world.x, point.height, world.y)
+}
+
+fn world_to_tile_space_point(projection: TileWorldProjection, world: Vec3) -> TileSpacePoint {
+    TileSpacePoint {
+        tile: projection.world_to_tile(world),
+        height: world.y,
+    }
 }
 
 fn follow_selected_ship_preset(
@@ -357,7 +431,8 @@ fn follow_selected_ship_preset(
     let heading = target_heading_from_cog(ship_info.course_over_ground);
     let forward = Quat::from_rotation_y(heading).mul_vec3(Vec3::Z);
     let behind = -forward.normalize_or_zero();
-    let position = focus + behind * CAMERA_FOLLOW_DISTANCE_METERS + Vec3::Y * CAMERA_FOLLOW_HEIGHT_METERS;
+    let position =
+        focus + behind * CAMERA_FOLLOW_DISTANCE_METERS + Vec3::Y * CAMERA_FOLLOW_HEIGHT_METERS;
 
     Some(CameraPreset { position, focus })
 }

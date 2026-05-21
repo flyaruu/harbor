@@ -12,8 +12,17 @@ By default, the app connects to:
 
 - `SPACETIMEDB_URI=http://localhost:3000`
 - `SPACETIMEDB_MODULE=ship-spacetime`
+- `TILE_SERVER_URI=http://localhost:8081`
 
 Set `SPACETIMEDB_TOKEN` as well if the target database requires authentication.
+
+On native/desktop, map tiles are fetched over HTTP from `TILE_SERVER_URI` and cached under:
+
+```text
+.cache/harbor_tiles/
+```
+
+Tiles are loaded around the active camera focus instead of preloading a fixed tile manifest at startup.
 
 ## Running
 

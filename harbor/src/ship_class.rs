@@ -30,12 +30,11 @@ impl ShipClass {
                 MajorAisShipType::Tug
                 | MajorAisShipType::Towing
                 | MajorAisShipType::TowingLarge
-                | MajorAisShipType::PortTender
+                | MajorAisShipType::PortTender,
             ) => Self::Tug,
-            Some(
-                MajorAisShipType::HighSpeedCraft
-                | MajorAisShipType::PleasureCraft,
-            ) => Self::Speedboat,
+            Some(MajorAisShipType::HighSpeedCraft | MajorAisShipType::PleasureCraft) => {
+                Self::Speedboat
+            }
             Some(MajorAisShipType::Sailing) => Self::Sailboat,
             Some(MajorAisShipType::Tanker) => Self::Tanker,
             Some(MajorAisShipType::MilitaryOps) => Self::Military,
@@ -66,7 +65,8 @@ impl ShipClass {
                 scene_path: "models/speedboat.glb",
                 model_translation: Vec3::new(0.0, 1.0, 0.0),
                 // Combine X and Y rotations by multiplying quaternions
-                model_rotation: Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2) * Quat::from_rotation_z(-std::f32::consts::FRAC_PI_2),
+                model_rotation: Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2)
+                    * Quat::from_rotation_z(-std::f32::consts::FRAC_PI_2),
                 model_scale: Vec3::splat(0.10),
             },
             Self::Sailboat => ShipClassSpec {

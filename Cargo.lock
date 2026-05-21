@@ -3521,6 +3521,7 @@ dependencies = [
  "chrono",
  "console_error_panic_hook",
  "spacetimedb-sdk",
+ "ureq",
  "web-sys",
  "web-time",
 ]
@@ -4244,6 +4245,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "http",
+ "native-tls",
  "serde",
  "serde_json",
  "spacetimedb-sdk",

@@ -71,7 +71,9 @@ pub fn timestamp_ui(
 ) {
     let ctx = contexts.ctx_mut().expect("primary egui context");
     let mut timestamp_changed = false;
-    let current_slider_timestamp = current_timestamp.0.or_else(|| parse_timestamp(&timestamp.value));
+    let current_slider_timestamp = current_timestamp
+        .0
+        .or_else(|| parse_timestamp(&timestamp.value));
 
     if !timestamp.is_editing
         && let Some(current) = current_timestamp.0
@@ -109,93 +111,92 @@ pub fn timestamp_ui(
         .fixed_pos(egui::pos2(12.0, 12.0))
         .interactable(true)
         .show(ctx, |ui| {
-            overlay_frame()
-                .show(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        if ui.button("Play").clicked() {
-                            timestamp.is_editing = false;
-                            playback.rate = 1.0;
-                        }
+            overlay_frame().show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    if ui.button("Play").clicked() {
+                        timestamp.is_editing = false;
+                        playback.rate = 1.0;
+                    }
 
-                        if ui.button("10x").clicked() {
-                            timestamp.is_editing = false;
-                            playback.rate = 10.0;
-                        }
+                    if ui.button("10x").clicked() {
+                        timestamp.is_editing = false;
+                        playback.rate = 10.0;
+                    }
 
-                        if ui.button("100x").clicked() {
-                            timestamp.is_editing = false;
-                            playback.rate = 100.0;
-                        }
+                    if ui.button("100x").clicked() {
+                        timestamp.is_editing = false;
+                        playback.rate = 100.0;
+                    }
 
-                        if ui.button("Stop").clicked() {
-                            timestamp.is_editing = false;
-                            playback.rate = 0.0;
-                        }
+                    if ui.button("Stop").clicked() {
+                        timestamp.is_editing = false;
+                        playback.rate = 0.0;
+                    }
 
-                        if ui.button("Reset").clicked()
-                            && let Some(oldest_timestamp) = bounds.oldest
+                    if ui.button("Reset").clicked()
+                        && let Some(oldest_timestamp) = bounds.oldest
+                    {
+                        timestamp.is_editing = false;
+                        playback.rate = 0.0;
+                        timestamp.value = format_timestamp(oldest_timestamp);
+                        timestamp_changed = true;
+                    }
+
+                    if ui.button("-").clicked() {
+                        timestamp.is_editing = false;
+                        playback.rate = 0.0;
+                        shift_timestamp(&mut timestamp.value, -1);
+                        timestamp_changed = true;
+                    }
+
+                    let timestamp_input = ui
+                        .add(egui::TextEdit::singleline(&mut timestamp.value).desired_width(220.0));
+
+                    if timestamp_input.has_focus() {
+                        timestamp.is_editing = true;
+                    } else if timestamp_input.lost_focus() {
+                        timestamp.is_editing = false;
+                    }
+
+                    if timestamp_input.changed() && timestamp.is_editing {
+                        playback.rate = 0.0;
+                        timestamp_changed = true;
+                    }
+
+                    if ui.button("+").clicked() {
+                        timestamp.is_editing = false;
+                        playback.rate = 0.0;
+                        shift_timestamp(&mut timestamp.value, 1);
+                        timestamp_changed = true;
+                    }
+
+                    if let Some((oldest, newest)) = slider_bounds(&bounds, current_slider_timestamp)
+                    {
+                        let mut slider_value = parse_timestamp(&timestamp.value)
+                            .map(|value| value.timestamp())
+                            .unwrap_or(oldest)
+                            .clamp(oldest, newest);
+
+                        if ui
+                            .add_sized(
+                                [220.0, 0.0],
+                                egui::Slider::new(&mut slider_value, oldest..=newest)
+                                    .show_value(false),
+                            )
+                            .changed()
                         {
                             timestamp.is_editing = false;
                             playback.rate = 0.0;
-                            timestamp.value = format_timestamp(oldest_timestamp);
+                            let Some(slider_timestamp) = DateTime::from_timestamp(slider_value, 0)
+                            else {
+                                return;
+                            };
+                            timestamp.value = format_timestamp(slider_timestamp);
                             timestamp_changed = true;
                         }
-
-                        if ui.button("-").clicked() {
-                            timestamp.is_editing = false;
-                            playback.rate = 0.0;
-                            shift_timestamp(&mut timestamp.value, -1);
-                            timestamp_changed = true;
-                        }
-
-                        let timestamp_input = ui.add(
-                            egui::TextEdit::singleline(&mut timestamp.value).desired_width(220.0),
-                        );
-
-                        if timestamp_input.has_focus() {
-                            timestamp.is_editing = true;
-                        } else if timestamp_input.lost_focus() {
-                            timestamp.is_editing = false;
-                        }
-
-                        if timestamp_input.changed() && timestamp.is_editing {
-                            playback.rate = 0.0;
-                            timestamp_changed = true;
-                        }
-
-                        if ui.button("+").clicked() {
-                            timestamp.is_editing = false;
-                            playback.rate = 0.0;
-                            shift_timestamp(&mut timestamp.value, 1);
-                            timestamp_changed = true;
-                        }
-
-                        if let Some((oldest, newest)) = slider_bounds(&bounds, current_slider_timestamp) {
-                            let mut slider_value = parse_timestamp(&timestamp.value)
-                                .map(|value| value.timestamp())
-                                .unwrap_or(oldest)
-                                .clamp(oldest, newest);
-
-                            if ui
-                                .add_sized(
-                                    [220.0, 0.0],
-                                    egui::Slider::new(&mut slider_value, oldest..=newest)
-                                        .show_value(false),
-                                )
-                                .changed()
-                            {
-                                timestamp.is_editing = false;
-                                playback.rate = 0.0;
-                                let Some(slider_timestamp) = DateTime::from_timestamp(slider_value, 0)
-                                else {
-                                    return;
-                                };
-                                timestamp.value = format_timestamp(slider_timestamp);
-                                timestamp_changed = true;
-                            }
-                        }
-                    });
+                    }
                 });
+            });
         });
 
     egui::Area::new("ship_info_static_overlay".into())
@@ -208,7 +209,11 @@ pub fn timestamp_ui(
                 ui.separator();
                 info_row(ui, "Ship ID", &format_optional_u64(ship_info.ship_id));
                 info_row(ui, "Name", &ship_info.name);
-                info_row(ui, "Call Sign", &format_optional_text(ship_info.call_sign.as_deref()));
+                info_row(
+                    ui,
+                    "Call Sign",
+                    &format_optional_text(ship_info.call_sign.as_deref()),
+                );
                 info_row(ui, "Type", &format_ship_type(ship_info.ship_type.as_ref()));
                 info_row(ui, "AIS Dims", &format_ais_dimensions(&ship_info));
             });
@@ -327,7 +332,9 @@ fn format_optional_text(value: Option<&str>) -> String {
 }
 
 fn format_optional_u64(value: Option<u64>) -> String {
-    value.map(|value| value.to_string()).unwrap_or_else(|| "-".to_owned())
+    value
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "-".to_owned())
 }
 
 fn format_optional_f64(value: Option<f64>, unit: &str) -> String {
@@ -356,9 +363,7 @@ fn format_ship_type(value: Option<&MajorAisShipType>) -> String {
         Some(MajorAisShipType::Fishing) => "Fishing".to_owned(),
         Some(MajorAisShipType::Towing) => "Towing".to_owned(),
         Some(MajorAisShipType::TowingLarge) => "Towing Large".to_owned(),
-        Some(MajorAisShipType::DredgingOrUnderwaterOps) => {
-            "Dredging or Underwater Ops".to_owned()
-        }
+        Some(MajorAisShipType::DredgingOrUnderwaterOps) => "Dredging or Underwater Ops".to_owned(),
         Some(MajorAisShipType::DivingOps) => "Diving Ops".to_owned(),
         Some(MajorAisShipType::MilitaryOps) => "Military Ops".to_owned(),
         Some(MajorAisShipType::Sailing) => "Sailing".to_owned(),
@@ -368,9 +373,7 @@ fn format_ship_type(value: Option<&MajorAisShipType>) -> String {
         Some(MajorAisShipType::SearchAndRescueVessel) => "Search and Rescue Vessel".to_owned(),
         Some(MajorAisShipType::Tug) => "Tug".to_owned(),
         Some(MajorAisShipType::PortTender) => "Port Tender".to_owned(),
-        Some(MajorAisShipType::AntiPollutionEquipment) => {
-            "Anti-Pollution Equipment".to_owned()
-        }
+        Some(MajorAisShipType::AntiPollutionEquipment) => "Anti-Pollution Equipment".to_owned(),
         Some(MajorAisShipType::LawEnforcement) => "Law Enforcement".to_owned(),
         Some(MajorAisShipType::MedicalTransport) => "Medical Transport".to_owned(),
         Some(MajorAisShipType::NoncombatantShip) => "Noncombatant Ship".to_owned(),

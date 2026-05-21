@@ -10,13 +10,13 @@ use std::time::Instant;
 #[cfg(target_arch = "wasm32")]
 use web_time::Instant;
 
+use crate::map::{MapRoot, TileWorldProjection};
 use crate::module_bindings::{
     CurrentShipProjection, CurrentShipProjectionTableAccess, DbConnection, LocationReport,
     LocationReportTableAccess, NewestLocationReportTimeTableAccess,
     OldestLocationReportTimeTableAccess, RemoteModule, Ship, ShipTableAccess,
     set_current_projection_request,
 };
-use crate::map::{MapRoot, TileWorldProjection};
 use crate::ship::{PhysicalShip, ProjectedShip, spawn_projected_ship_pair};
 use crate::ship_class::ShipClass;
 use crate::ui::{
@@ -252,7 +252,6 @@ fn extend_timestamp_bounds_from_live_reports(
 
 const PROJECTION_VISIBILITY_WINDOW_MICROS: i64 = 10 * 60 * 1_000_000;
 
-
 fn request_current_projection(
     connection: &StdbConn,
     current_timestamp: &chrono::DateTime<chrono::Utc>,
@@ -399,13 +398,12 @@ fn projected_ship_class(connection: Option<&StdbConn>, ship_id: u64) -> ShipClas
         .and_then(|connection| connection.db().ship().mmsi().find(&ship_id))
         .as_ref()
         .map(|ship| {
-            let determined_type= ShipClass::from_major_ais_type(ship.major_ship_type.as_ref());
+            let determined_type = ShipClass::from_major_ais_type(ship.major_ship_type.as_ref());
 
             // info!("determining ship class for ship_id {ship_id} type: {:?} from original: {:?}", determined_type, ship.ship_type);
             determined_type
         })
         .unwrap_or(ShipClass::Default)
-
 }
 
 fn sync_projected_ship_entity(
@@ -423,7 +421,8 @@ fn sync_projected_ship_entity(
     let ship_id = current_projection.ship_mmsi;
     let ship_name = projected_ship_name(connection, ship_id);
     let ship_class = projected_ship_class(connection, ship_id);
-    let world_position = projection.lat_lon_to_world(current_projection.lat, current_projection.lon);
+    let world_position =
+        projection.lat_lon_to_world(current_projection.lat, current_projection.lon);
 
     let mut existing_entity = None;
 
@@ -513,7 +512,9 @@ fn sync_physical_ship_name(
 ) {
     for (entity, physical_ship) in physical_ships {
         if physical_ship.ship_id == ship_id {
-            commands.entity(entity).insert(Name::new(ship_name.to_owned()));
+            commands
+                .entity(entity)
+                .insert(Name::new(ship_name.to_owned()));
             break;
         }
     }

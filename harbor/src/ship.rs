@@ -1,6 +1,6 @@
+use bevy::asset::RenderAssetUsages;
 use bevy::camera::primitives::MeshAabb;
 use bevy::camera::visibility::NoFrustumCulling;
-use bevy::asset::RenderAssetUsages;
 use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
 use bevy::scene::{SceneInstanceReady, SceneSpawner};
@@ -164,7 +164,11 @@ pub fn smooth_physical_ships(
         ship.lon = projected_ship.lon;
         ship.sog = projected_ship.sog;
         ship.cog = projected_ship.cog;
-        ship.heading = lerp_angle(ship.heading, projected_ship.world_heading_radians(), heading_alpha);
+        ship.heading = lerp_angle(
+            ship.heading,
+            projected_ship.world_heading_radians(),
+            heading_alpha,
+        );
     }
 }
 
@@ -201,7 +205,8 @@ pub fn sync_ship_footprints_from_db(
             .and_then(ship_footprint_from_record);
 
         match (current_footprint, next_footprint) {
-            (Some(current), Some(next)) if current.translation == next.translation && current.scale == next.scale => {}
+            (Some(current), Some(next))
+                if current.translation == next.translation && current.scale == next.scale => {}
             (_, Some(next)) => {
                 commands.queue_silenced(move |world: &mut World| {
                     let Ok(mut entity_mut) = world.get_entity_mut(entity) else {
@@ -256,7 +261,13 @@ pub fn sync_physical_ship_classes(
     mut commands: Commands,
     connection: Option<Res<StdbConn>>,
     physical_ships: Query<
-        (Entity, &PhysicalShip, &ShipAppearance, Option<&Children>, &Name),
+        (
+            Entity,
+            &PhysicalShip,
+            &ShipAppearance,
+            Option<&Children>,
+            &Name,
+        ),
         With<ShipSceneRoot>,
     >,
     ship_scene_instances: Query<(), With<ShipSceneInstance>>,
@@ -475,7 +486,10 @@ pub fn despawn_selected_route_when_projection_missing(
             continue;
         }
 
-        info!(ship_id = route_root.ship_id, "despawning selected ship route with missing projection");
+        info!(
+            ship_id = route_root.ship_id,
+            "despawning selected ship route with missing projection"
+        );
 
         if selected_route.0 == Some(entity) {
             selected_route.0 = None;
@@ -551,7 +565,10 @@ fn ship_location_reports(connection: &StdbConn, ship_id: u64) -> Vec<LocationRep
     reports
 }
 
-fn create_route(projection: &TileWorldProjection, location_reports: &[LocationReport]) -> Option<Mesh> {
+fn create_route(
+    projection: &TileWorldProjection,
+    location_reports: &[LocationReport],
+) -> Option<Mesh> {
     let mut points = Vec::with_capacity(location_reports.len());
 
     for report in location_reports {
@@ -597,7 +614,10 @@ fn create_route(projection: &TileWorldProjection, location_reports: &[LocationRe
         }
     }
 
-    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+    let mut mesh = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::default(),
+    );
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vertices);
     mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
     mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
@@ -758,7 +778,7 @@ pub(crate) fn spawn_ship_scene_entity(
     commands: &mut Commands,
     asset_server: &AssetServer,
     projection: &TileWorldProjection,
-    water_height: f32,  
+    water_height: f32,
     map_root: &MapRoot,
     name: &str,
     class: ShipClass,
@@ -771,16 +791,16 @@ pub(crate) fn spawn_ship_scene_entity(
 
     let root_entity = commands
         .spawn((
-        Name::new(name.to_owned()),
-        ship,
-        ShipAppearance { class },
-        ShipSceneRoot,
-        ChildOf(map_root.0),
-        Visibility::default(),
-        InheritedVisibility::default(),
-        GlobalTransform::default(),
-        Transform::from_translation(ship_position)
-            .with_rotation(Quat::from_rotation_y(ship_heading)),
+            Name::new(name.to_owned()),
+            ship,
+            ShipAppearance { class },
+            ShipSceneRoot,
+            ChildOf(map_root.0),
+            Visibility::default(),
+            InheritedVisibility::default(),
+            GlobalTransform::default(),
+            Transform::from_translation(ship_position)
+                .with_rotation(Quat::from_rotation_y(ship_heading)),
         ))
         .id();
 
@@ -894,7 +914,6 @@ fn target_heading_from_cog(cog: Option<f64>) -> f32 {
         .map(|cog| -((cog.rem_euclid(360.0)) as f32).to_radians())
         .unwrap_or(SHIP_HEADING)
 }
-
 
 fn ship_footprint_from_record(ship: &ShipRecord) -> Option<ShipFootprint> {
     let fore = f32::from(ship.dimension_a?);

@@ -1,12 +1,28 @@
 use std::collections::VecDeque;
+#[cfg(not(target_arch = "wasm32"))]
+use std::collections::{HashMap, HashSet};
 use std::f64::consts::PI;
+#[cfg(not(target_arch = "wasm32"))]
+use std::fs;
+#[cfg(not(target_arch = "wasm32"))]
+use std::io::Read;
+#[cfg(not(target_arch = "wasm32"))]
+use std::path::{Path, PathBuf};
 
+use bevy::asset::AssetApp;
+use bevy::asset::io::AssetSourceBuilder;
+#[cfg(not(target_arch = "wasm32"))]
+use bevy::asset::io::file::FileAssetReader;
 use bevy::gltf::GltfMaterialName;
 use bevy::math::DVec2;
 use bevy::mesh::VertexAttributeValues;
 use bevy::pbr::MeshMaterial3d;
 use bevy::prelude::*;
 use bevy::scene::{SceneInstanceReady, SceneSpawner};
+#[cfg(not(target_arch = "wasm32"))]
+use bevy::tasks::{IoTaskPool, Task, block_on, poll_once};
+#[cfg(not(target_arch = "wasm32"))]
+use bevy_panorbit_wasd_camera::PanOrbitCamera;
 use bevy_water::WaterSettings;
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -17,13 +33,16 @@ use bevy_water::material::{StandardWaterMaterial, WaterMaterial};
 const TILE_EXTENT: f32 = 4096.0;
 const TILE_ZOOM_LEVEL: u32 = 14;
 const MAX_CONCURRENT_TILE_LOADS: usize = 16;
-const TILE_MANIFEST: TileManifest = TileManifest {
-    zoom_level: TILE_ZOOM_LEVEL,
-    min_x: 8368,
-    max_x: 8400,
-    min_y: 5412,
-    max_y: 5421,
-};
+const TILE_ANCHOR_LATITUDE: f64 = 51.90189;
+const TILE_ANCHOR_LONGITUDE: f64 = 4.49171;
+#[cfg(not(target_arch = "wasm32"))]
+const TILE_LOAD_RADIUS_X: i32 = 6;
+#[cfg(not(target_arch = "wasm32"))]
+const TILE_LOAD_RADIUS_Y: i32 = 4;
+#[cfg(not(target_arch = "wasm32"))]
+const TILE_CACHE_ASSET_SOURCE: &str = "tile_cache";
+#[cfg(not(target_arch = "wasm32"))]
+const DEFAULT_TILE_SERVER_URI: &str = "http://localhost:8081";
 
 #[derive(Resource, Clone)]
 pub(crate) struct TileMaterialPalette {
@@ -63,14 +82,24 @@ impl TileMaterialPalette {
 #[derive(Component)]
 pub(crate) struct TileSceneRoot;
 
-#[derive(Component)]
-pub(crate) struct PendingTileLoad;
+#[derive(Component, Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(crate) struct PendingTileLoad(pub(crate) TileKey);
 
 #[derive(Resource)]
 pub(crate) struct TileLoadQueue {
     map_root: Entity,
-    pending: VecDeque<TileAsset>,
-    inflight: usize,
+    ready: VecDeque<TileAsset>,
+    inflight_scene_loads: usize,
+    #[cfg(not(target_arch = "wasm32"))]
+    pending_downloads: VecDeque<TileAsset>,
+    #[cfg(not(target_arch = "wasm32"))]
+    inflight_downloads: HashMap<TileKey, Task<Result<TileAsset, String>>>,
+    #[cfg(not(target_arch = "wasm32"))]
+    states: HashMap<TileKey, TileLoadState>,
+    #[cfg(not(target_arch = "wasm32"))]
+    desired: HashSet<TileKey>,
+    #[cfg(not(target_arch = "wasm32"))]
+    active_roots: HashMap<TileKey, Entity>,
 }
 
 #[derive(Resource, Clone, Copy)]
@@ -79,8 +108,28 @@ pub struct MapRoot(pub Entity);
 #[derive(Resource, Clone, Copy, Debug)]
 pub struct TileWorldProjection {
     zoom_level: u32,
-    max_tile_x: i32,
-    max_tile_y: i32,
+    anchor_tile_x: i32,
+    anchor_tile_y: i32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(crate) struct TileKey {
+    zoom_level: u32,
+    x: i32,
+    y: i32,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum TileLoadState {
+    Unrequested,
+    Queued,
+    Downloading,
+    Cached,
+    SceneQueued,
+    LoadingScene,
+    Loaded,
+    Failed,
 }
 
 impl TileWorldProjection {
@@ -95,8 +144,8 @@ impl TileWorldProjection {
         let local_y = tile_y.fract() as f32 * TILE_EXTENT;
 
         Vec2::new(
-            ((self.max_tile_x - tile_x.floor() as i32 + 1) as f32 * TILE_EXTENT) - local_x,
-            ((self.max_tile_y - tile_y.floor() as i32 + 1) as f32 * TILE_EXTENT) - local_y,
+            ((self.anchor_tile_x - tile_x.floor() as i32 + 1) as f32 * TILE_EXTENT) - local_x,
+            ((self.anchor_tile_y - tile_y.floor() as i32 + 1) as f32 * TILE_EXTENT) - local_y,
         )
     }
 
@@ -105,11 +154,18 @@ impl TileWorldProjection {
         Vec3::new(world.x, 0.0, world.y)
     }
 
-    fn from_tiles(zoom_level: u32, tiles: &[TileAsset]) -> Self {
+    pub fn world_to_tile(self, world: Vec3) -> DVec2 {
+        DVec2::new(
+            self.anchor_tile_x as f64 + 1.0 - (world.x as f64 / TILE_EXTENT as f64),
+            self.anchor_tile_y as f64 + 1.0 - (world.z as f64 / TILE_EXTENT as f64),
+        )
+    }
+
+    fn new(zoom_level: u32, anchor_tile_x: i32, anchor_tile_y: i32) -> Self {
         Self {
             zoom_level,
-            max_tile_x: tiles.iter().map(|tile| tile.x).max().unwrap_or(0),
-            max_tile_y: tiles.iter().map(|tile| tile.y).max().unwrap_or(0),
+            anchor_tile_x,
+            anchor_tile_y,
         }
     }
 }
@@ -206,8 +262,12 @@ pub fn setup_map_tile_materials(
 }
 
 pub fn setup_map_tiles(mut commands: Commands) {
-    let tiles = load_tiles(TILE_ZOOM_LEVEL);
-    let projection = TileWorldProjection::from_tiles(TILE_ZOOM_LEVEL, &tiles);
+    let anchor_tile = lat_lon_to_tile(TILE_ANCHOR_LATITUDE, TILE_ANCHOR_LONGITUDE, TILE_ZOOM_LEVEL);
+    let projection = TileWorldProjection::new(
+        TILE_ZOOM_LEVEL,
+        anchor_tile.x.floor() as i32,
+        anchor_tile.y.floor() as i32,
+    );
 
     let map_root = commands
         .spawn((
@@ -223,9 +283,126 @@ pub fn setup_map_tiles(mut commands: Commands) {
     commands.insert_resource(MapRoot(map_root));
     commands.insert_resource(TileLoadQueue {
         map_root,
-        pending: VecDeque::from(tiles),
-        inflight: 0,
+        #[cfg(target_arch = "wasm32")]
+        ready: VecDeque::new(),
+        #[cfg(not(target_arch = "wasm32"))]
+        ready: VecDeque::new(),
+        inflight_scene_loads: 0,
+        #[cfg(not(target_arch = "wasm32"))]
+        pending_downloads: VecDeque::new(),
+        #[cfg(not(target_arch = "wasm32"))]
+        inflight_downloads: HashMap::new(),
+        #[cfg(not(target_arch = "wasm32"))]
+        states: HashMap::new(),
+        #[cfg(not(target_arch = "wasm32"))]
+        desired: HashSet::new(),
+        #[cfg(not(target_arch = "wasm32"))]
+        active_roots: HashMap::new(),
     });
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn update_desired_map_tiles(
+    mut commands: Commands,
+    projection: Res<TileWorldProjection>,
+    camera: Single<&PanOrbitCamera, With<Camera3d>>,
+    mut queue: ResMut<TileLoadQueue>,
+) {
+    let desired = desired_tiles_for_focus(&projection, camera.focus);
+
+    let to_unload = queue
+        .active_roots
+        .iter()
+        .filter_map(|(key, entity)| (!desired.contains(key)).then_some((*key, *entity)))
+        .collect::<Vec<_>>();
+    for (key, entity) in to_unload {
+        commands.entity(entity).despawn();
+        queue.active_roots.remove(&key);
+        if matches!(queue.states.get(&key), Some(TileLoadState::LoadingScene)) {
+            queue.inflight_scene_loads = queue.inflight_scene_loads.saturating_sub(1);
+        }
+        queue.states.insert(key, TileLoadState::Cached);
+    }
+
+    for key in desired.iter().copied() {
+        let tile = tile_asset_for_key(*projection, key);
+        let state = queue
+            .states
+            .get(&key)
+            .copied()
+            .unwrap_or(TileLoadState::Unrequested);
+        match state {
+            TileLoadState::Unrequested => {
+                queue.pending_downloads.push_back(tile);
+                queue.states.insert(key, TileLoadState::Queued);
+            }
+            TileLoadState::Cached if !queue.active_roots.contains_key(&key) => {
+                queue.ready.push_back(tile);
+                queue.states.insert(key, TileLoadState::SceneQueued);
+            }
+            TileLoadState::Loaded if !queue.active_roots.contains_key(&key) => {
+                queue.states.insert(key, TileLoadState::SceneQueued);
+                queue.ready.push_back(tile);
+            }
+            TileLoadState::Failed
+            | TileLoadState::Queued
+            | TileLoadState::Downloading
+            | TileLoadState::SceneQueued
+            | TileLoadState::LoadingScene
+            | TileLoadState::Cached
+            | TileLoadState::Loaded => {}
+        }
+    }
+
+    queue.desired = desired;
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn download_map_tile_batch(mut queue: ResMut<TileLoadQueue>) {
+    while queue.inflight_downloads.len() < MAX_CONCURRENT_TILE_LOADS {
+        let Some(tile) = queue.pending_downloads.pop_front() else {
+            break;
+        };
+
+        let key = tile.key();
+        if !queue.desired.contains(&key) {
+            queue.states.insert(key, TileLoadState::Unrequested);
+            continue;
+        }
+        let cache_path = tile_cache_path(&tile);
+        if cache_path.exists() {
+            queue.ready.push_back(tile);
+            queue.states.insert(key, TileLoadState::Cached);
+            continue;
+        }
+
+        let task = IoTaskPool::get().spawn(async move { cache_tile_from_http(tile) });
+        queue.states.insert(key, TileLoadState::Downloading);
+        queue.inflight_downloads.insert(key, task);
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn collect_completed_map_tile_downloads(mut queue: ResMut<TileLoadQueue>) {
+    let completed = queue
+        .inflight_downloads
+        .iter_mut()
+        .filter_map(|(key, task)| block_on(poll_once(task)).map(|result| (*key, result)))
+        .collect::<Vec<_>>();
+
+    for (key, result) in completed {
+        queue.inflight_downloads.remove(&key);
+        match result {
+            Ok(tile) => {
+                queue.states.insert(key, TileLoadState::Cached);
+                queue.ready.push_back(tile);
+            }
+            Err(error) => {
+                queue.states.insert(key, TileLoadState::Failed);
+                warn!(zoom = key.zoom_level, x = key.x, y = key.y, "{error}");
+            }
+        }
+    }
 }
 
 pub fn spawn_map_tile_batch(
@@ -233,20 +410,35 @@ pub fn spawn_map_tile_batch(
     asset_server: Res<AssetServer>,
     mut queue: ResMut<TileLoadQueue>,
 ) {
-    while queue.inflight < MAX_CONCURRENT_TILE_LOADS {
-        let Some(tile) = queue.pending.pop_front() else {
+    while queue.inflight_scene_loads < MAX_CONCURRENT_TILE_LOADS {
+        let Some(tile) = queue.ready.pop_front() else {
             break;
         };
 
-        queue.inflight += 1;
-        commands.spawn((
-            Name::new(format!("Tile {}_{}", tile.x, tile.y)),
-            TileSceneRoot,
-            PendingTileLoad,
-            ChildOf(queue.map_root),
-            SceneRoot(asset_server.load(GltfAssetLabel::Scene(0).from_asset(tile.asset_path))),
-            Transform::from_translation(tile.translation),
-        ));
+        let key = tile.key();
+        #[cfg(not(target_arch = "wasm32"))]
+        if !queue.desired.contains(&key) || queue.active_roots.contains_key(&key) {
+            queue.states.insert(key, TileLoadState::Cached);
+            continue;
+        }
+
+        queue.inflight_scene_loads += 1;
+        #[cfg(not(target_arch = "wasm32"))]
+        queue.states.insert(key, TileLoadState::LoadingScene);
+        let root = commands
+            .spawn((
+                Name::new(format!("Tile {}_{}", tile.x, tile.y)),
+                TileSceneRoot,
+                PendingTileLoad(key),
+                ChildOf(queue.map_root),
+                SceneRoot(
+                    asset_server.load(GltfAssetLabel::Scene(0).from_asset(tile.asset_path.clone())),
+                ),
+                Transform::from_translation(tile.translation),
+            ))
+            .id();
+        #[cfg(not(target_arch = "wasm32"))]
+        queue.active_roots.insert(key, root);
     }
 }
 
@@ -255,7 +447,7 @@ pub fn remap_map_tile_materials(
     mut commands: Commands,
     scene_spawner: Res<SceneSpawner>,
     tile_roots: Query<(), With<TileSceneRoot>>,
-    pending_tile_loads: Query<(), With<PendingTileLoad>>,
+    pending_tile_loads: Query<&PendingTileLoad>,
     palette: Res<TileMaterialPalette>,
     mut queue: ResMut<TileLoadQueue>,
     mesh_handles: Query<&Mesh3d>,
@@ -271,9 +463,18 @@ pub fn remap_map_tile_materials(
         return;
     }
 
-    if pending_tile_loads.get(root).is_ok() {
+    if let Ok(pending) = pending_tile_loads.get(root) {
         commands.entity(root).remove::<PendingTileLoad>();
-        queue.inflight = queue.inflight.saturating_sub(1);
+        queue.inflight_scene_loads = queue.inflight_scene_loads.saturating_sub(1);
+        #[cfg(not(target_arch = "wasm32"))]
+        if queue.desired.contains(&pending.0) {
+            queue.states.insert(pending.0, TileLoadState::Loaded);
+        } else {
+            queue.states.insert(pending.0, TileLoadState::Cached);
+            queue.active_roots.remove(&pending.0);
+            commands.entity(root).despawn();
+            return;
+        }
     }
 
     for entity in scene_spawner.iter_instance_entities(trigger.event().instance_id) {
@@ -290,11 +491,15 @@ pub fn remap_map_tile_materials(
                 ensure_water_uvs(mesh, transform);
             }
 
-            commands.entity(entity).remove::<MeshMaterial3d<StandardMaterial>>();
+            commands
+                .entity(entity)
+                .remove::<MeshMaterial3d<StandardMaterial>>();
             #[cfg(not(target_arch = "wasm32"))]
             commands
                 .entity(entity)
-                .insert(MeshMaterial3d::<StandardWaterMaterial>(palette.water.clone()));
+                .insert(MeshMaterial3d::<StandardWaterMaterial>(
+                    palette.water.clone(),
+                ));
             #[cfg(target_arch = "wasm32")]
             commands
                 .entity(entity)
@@ -315,7 +520,8 @@ pub fn remap_map_tile_materials(
 }
 
 fn ensure_water_uvs(mesh: &mut Mesh, global_transform: &GlobalTransform) {
-    let Some(VertexAttributeValues::Float32x3(positions)) = mesh.attribute(Mesh::ATTRIBUTE_POSITION)
+    let Some(VertexAttributeValues::Float32x3(positions)) =
+        mesh.attribute(Mesh::ATTRIBUTE_POSITION)
     else {
         return;
     };
@@ -334,53 +540,151 @@ fn ensure_water_uvs(mesh: &mut Mesh, global_transform: &GlobalTransform) {
 
 #[derive(Clone, Debug)]
 struct TileAsset {
+    zoom_level: u32,
     x: i32,
     y: i32,
     asset_path: String,
     translation: Vec3,
 }
 
-#[derive(Clone, Copy, Debug)]
-struct TileManifest {
-    zoom_level: u32,
-    min_x: i32,
-    max_x: i32,
-    min_y: i32,
-    max_y: i32,
+impl TileAsset {
+    fn key(&self) -> TileKey {
+        TileKey {
+            zoom_level: self.zoom_level,
+            x: self.x,
+            y: self.y,
+        }
+    }
 }
 
-fn load_tiles(zoom_level: u32) -> Vec<TileAsset> {
-    assert_eq!(
-        zoom_level, TILE_MANIFEST.zoom_level,
-        "tile manifest only covers zoom level {}",
-        TILE_MANIFEST.zoom_level
-    );
+fn tile_asset_for_key(projection: TileWorldProjection, key: TileKey) -> TileAsset {
+    TileAsset {
+        zoom_level: key.zoom_level,
+        x: key.x,
+        y: key.y,
+        asset_path: tile_asset_path(key.zoom_level, key.x, key.y),
+        translation: Vec3::new(
+            (projection.anchor_tile_x - key.x) as f32 * TILE_EXTENT,
+            0.0,
+            (projection.anchor_tile_y - key.y) as f32 * TILE_EXTENT,
+        ),
+    }
+}
 
-    let mut tiles = Vec::with_capacity(
-        ((TILE_MANIFEST.max_x - TILE_MANIFEST.min_x + 1)
-            * (TILE_MANIFEST.max_y - TILE_MANIFEST.min_y + 1)) as usize,
-    );
+#[cfg(not(target_arch = "wasm32"))]
+fn desired_tiles_for_focus(projection: &TileWorldProjection, focus: Vec3) -> HashSet<TileKey> {
+    let center = projection.world_to_tile(focus);
+    let center_x = center.x.floor() as i32;
+    let center_y = center.y.floor() as i32;
+    let mut desired = HashSet::new();
 
-    for x in TILE_MANIFEST.min_x..=TILE_MANIFEST.max_x {
-        for y in TILE_MANIFEST.min_y..=TILE_MANIFEST.max_y {
-            tiles.push(TileAsset {
+    for x in (center_x - TILE_LOAD_RADIUS_X)..=(center_x + TILE_LOAD_RADIUS_X) {
+        for y in (center_y - TILE_LOAD_RADIUS_Y)..=(center_y + TILE_LOAD_RADIUS_Y) {
+            desired.insert(TileKey {
+                zoom_level: projection.zoom_level,
                 x,
                 y,
-                asset_path: tile_asset_path(zoom_level, x, y),
-                translation: Vec3::new(
-                    (TILE_MANIFEST.max_x - x) as f32 * TILE_EXTENT,
-                    0.0,
-                    (TILE_MANIFEST.max_y - y) as f32 * TILE_EXTENT,
-                ),
             });
         }
     }
 
-    tiles
+    desired
 }
 
 fn tile_asset_path(zoom_level: u32, x: i32, y: i32) -> String {
-    format!("tiles/{zoom_level}/{x}_{y}.glb")
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        format!("{TILE_CACHE_ASSET_SOURCE}://{zoom_level}/{x}_{y}.glb")
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        format!("tiles/{zoom_level}/{x}_{y}.glb")
+    }
+}
+
+pub fn configure_tile_asset_source(app: &mut App) {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let cache_root = tile_cache_root();
+        let asset_root = cache_root.clone();
+        app.register_asset_source(
+            TILE_CACHE_ASSET_SOURCE,
+            AssetSourceBuilder::new(move || Box::new(FileAssetReader::new(asset_root.clone()))),
+        );
+        if let Err(error) = fs::create_dir_all(&cache_root) {
+            warn!(path = %cache_root.display(), "failed to create tile cache directory: {error}");
+        }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn tile_cache_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("harbor crate should live inside the workspace root")
+        .join(".cache/harbor_tiles")
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn tile_cache_relative_path(tile: &TileAsset) -> PathBuf {
+    PathBuf::from(tile.zoom_level.to_string()).join(format!("{}_{}.glb", tile.x, tile.y))
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn tile_cache_path(tile: &TileAsset) -> PathBuf {
+    tile_cache_root().join(tile_cache_relative_path(tile))
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn tile_server_uri() -> String {
+    std::env::var("TILE_SERVER_URI").unwrap_or_else(|_| DEFAULT_TILE_SERVER_URI.to_string())
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn tile_request_url(tile: &TileAsset) -> String {
+    format!(
+        "{}/data/{}/{}/{}.glb",
+        tile_server_uri().trim_end_matches('/'),
+        tile.zoom_level,
+        tile.x,
+        tile.y
+    )
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn cache_tile_from_http(tile: TileAsset) -> Result<TileAsset, String> {
+    let url = tile_request_url(&tile);
+    let cache_path = tile_cache_path(&tile);
+    if let Some(parent) = cache_path.parent() {
+        fs::create_dir_all(parent).map_err(|error| {
+            format!(
+                "failed to create tile cache directory {}: {error}",
+                parent.display()
+            )
+        })?;
+    }
+
+    let response = ureq::get(&url).call().map_err(|error| {
+        format!(
+            "failed to fetch tile {}_{} from {url}: {error}",
+            tile.x, tile.y
+        )
+    })?;
+    let mut reader = response.into_reader();
+    let mut bytes = Vec::new();
+    reader
+        .read_to_end(&mut bytes)
+        .map_err(|error| format!("failed to read tile response from {url}: {error}"))?;
+    fs::write(&cache_path, bytes).map_err(|error| {
+        format!(
+            "failed to write cached tile {}_{} to {}: {error}",
+            tile.x,
+            tile.y,
+            cache_path.display()
+        )
+    })?;
+    Ok(tile)
 }
 
 pub fn lat_lon_to_tile(latitude: f64, longitude: f64, zoom_level: u32) -> DVec2 {
@@ -391,4 +695,65 @@ pub fn lat_lon_to_tile(latitude: f64, longitude: f64, zoom_level: u32) -> DVec2 
         (1.0 - ((lat_radians.tan() + 1.0 / lat_radians.cos()).ln() / PI)) * 0.5 * tiles_per_axis;
 
     DVec2::new(x, y)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[cfg(not(target_arch = "wasm32"))]
+    fn builds_tile_request_url() {
+        let tile = TileAsset {
+            zoom_level: 14,
+            x: 8396,
+            y: 5421,
+            asset_path: String::new(),
+            translation: Vec3::ZERO,
+        };
+
+        assert_eq!(
+            tile_request_url(&tile),
+            "http://localhost:8081/data/14/8396/5421.glb"
+        );
+    }
+
+    #[test]
+    #[cfg(not(target_arch = "wasm32"))]
+    fn builds_cache_relative_path() {
+        let tile = TileAsset {
+            zoom_level: 14,
+            x: 8396,
+            y: 5421,
+            asset_path: String::new(),
+            translation: Vec3::ZERO,
+        };
+
+        assert_eq!(
+            tile_cache_relative_path(&tile),
+            PathBuf::from("14/8396_5421.glb")
+        );
+    }
+
+    #[test]
+    #[cfg(not(target_arch = "wasm32"))]
+    fn computes_desired_tiles_around_focus() {
+        let anchor_tile =
+            lat_lon_to_tile(TILE_ANCHOR_LATITUDE, TILE_ANCHOR_LONGITUDE, TILE_ZOOM_LEVEL);
+        let projection = TileWorldProjection::new(
+            TILE_ZOOM_LEVEL,
+            anchor_tile.x.floor() as i32,
+            anchor_tile.y.floor() as i32,
+        );
+        let focus = projection.lat_lon_to_world(51.90189, 4.49171);
+
+        let desired = desired_tiles_for_focus(&projection, focus);
+
+        assert!(!desired.is_empty());
+        assert!(desired.contains(&TileKey {
+            zoom_level: TILE_ZOOM_LEVEL,
+            x: anchor_tile.x.floor() as i32,
+            y: anchor_tile.y.floor() as i32,
+        }));
+    }
 }

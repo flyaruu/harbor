@@ -30,7 +30,8 @@ pub fn spawn_demo_ships(
         ShipClass::DredgingOrUnderwaterOps,
     ];
     let base_lat = SHIP_LATITUDE - latitude_offset_for_meters(DEMO_SHIP_OFFSET_SOUTH_METERS);
-    let base_lon = SHIP_LONGITUDE - longitude_offset_for_meters(DEMO_SHIP_OFFSET_WEST_METERS, base_lat);
+    let base_lon =
+        SHIP_LONGITUDE - longitude_offset_for_meters(DEMO_SHIP_OFFSET_WEST_METERS, base_lat);
 
     for (index, class) in demo_classes.into_iter().enumerate() {
         let ship_id = index as u64;

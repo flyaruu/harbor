@@ -14,6 +14,7 @@ spacetimedb-sdk.workspace = true
 bevy_light = "0.18.1"
 bevy_panorbit_wasd_camera = { version = "0.34.0", features = ["bevy_egui"] }
 bevy_water = "0.18.1"
+ureq = "2.12.1"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 bevy_stdb = { version = "0.8.1", features = ["browser"] }
