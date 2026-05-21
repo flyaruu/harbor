@@ -7,15 +7,18 @@ use std::io::ErrorKind;
 use std::io::{LineWriter, Write};
 use std::net::TcpStream;
 use std::path::Path;
+use std::str::from_utf8;
 use std::thread;
 use std::time::Duration;
 
 use http::Uri;
+use native_tls::TlsConnector;
 use serde::{Deserialize, Serialize};
 use spacetimedb_sdk::Timestamp;
 use tungstenite::stream::MaybeTlsStream;
 use tungstenite::Bytes;
 use tungstenite::WebSocket;
+use tungstenite::{client_tls_with_config, Connector};
 
 use crate::module_bindings::upsert_ship_static_data_reducer::upsert_ship_static_data;
 use crate::module_bindings::{add_location_report, DbConnection};
@@ -125,9 +128,10 @@ pub(crate) fn run_ais(conn: DbConnection) -> Result<(), Box<dyn Error>> {
 fn run_ais_session(conn: &DbConnection, logger: &mut AisFileLogger) -> Result<(), Box<dyn Error>> {
     let aisstream_api_url: Uri = Uri::from_static("wss://stream.aisstream.io/v0/stream");
     let aisstream_api_key: String = std::env::var("AISSTREAM_API_KEY").unwrap_or("".to_owned());
+    let no_cert_validation = no_cert_validation_enabled();
 
     println!("Connecting `{aisstream_api_url}`");
-    let (mut socket, _) = tungstenite::connect(aisstream_api_url)?;
+    let (mut socket, _) = connect_ais_socket(&aisstream_api_url, no_cert_validation)?;
     set_socket_read_timeout(&mut socket, AIS_READ_TIMEOUT)?;
 
     let auth_request = AuthRequest {
@@ -138,9 +142,10 @@ fn run_ais_session(conn: &DbConnection, logger: &mut AisFileLogger) -> Result<()
     let auth_request_bytes = Bytes::copy_from_slice(&serde_json::to_vec(&auth_request)?);
 
     println!("Authenticating...");
+    let auth_message = serde_json::to_string(&auth_request)?;
     socket.send(tungstenite::Message::Binary(auth_request_bytes))?;
 
-    println!("Successfully authenticated");
+    println!("Successfully authenticated: {}",auth_message);
     let mut message_count = 0;
     loop {
         let message = match socket.read() {
@@ -168,6 +173,57 @@ fn run_ais_session(conn: &DbConnection, logger: &mut AisFileLogger) -> Result<()
             println!("Received {message_count} AIS messages");
         }
     }
+}
+
+fn connect_ais_socket(
+    uri: &Uri,
+    no_cert_validation: bool,
+) -> Result<
+    (
+        WebSocket<MaybeTlsStream<TcpStream>>,
+        http::Response<Option<Vec<u8>>>,
+    ),
+    Box<dyn Error>,
+> {
+    let host = uri.host().ok_or("AIS stream URI missing host")?;
+    let port = uri.port_u16().unwrap_or(443);
+    let stream = TcpStream::connect((host, port))?;
+    stream.set_nodelay(true)?;
+
+    let connector = if no_cert_validation {
+        eprintln!(
+            "NO_CERT_VALIDATION=true, TLS certificate and hostname validation disabled for AIS stream"
+        );
+        let mut builder = TlsConnector::builder();
+        builder.danger_accept_invalid_certs(true);
+        builder.danger_accept_invalid_hostnames(true);
+        Some(Connector::NativeTls(builder.build()?))
+    } else {
+        None
+    };
+
+    let (socket, response) = client_tls_with_config(uri.clone(), stream, None, connector).map_err(
+        |error| match error {
+            tungstenite::HandshakeError::Failure(error) => error,
+            tungstenite::HandshakeError::Interrupted(_) => {
+                tungstenite::Error::Io(std::io::Error::other("AIS TLS handshake interrupted"))
+            }
+        },
+    )?;
+
+    Ok((socket, response))
+}
+
+fn no_cert_validation_enabled() -> bool {
+    std::env::var("NO_CERT_VALIDATION")
+        .ok()
+        .map(|value| {
+            matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
+        .unwrap_or(false)
 }
 
 fn next_run_number(output_dir: &Path) -> Result<u32, Box<dyn Error>> {
