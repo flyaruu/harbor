@@ -69,6 +69,7 @@ fn main() {
         (
             animate_light_direction,
             camera::log_camera_pose_every_five_seconds,
+            demo::toggle_demo_ships,
             map::spawn_map_tile_batch,
             ship::smooth_physical_ships,
             ship::sync_physical_ship_classes,

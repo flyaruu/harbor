@@ -11,6 +11,12 @@ const DEMO_SHIP_OFFSET_SOUTH_METERS: f64 = 350.0;
 const DEMO_SHIP_OFFSET_WEST_METERS: f64 = 800.0;
 const DEMO_SHIP_SPACING_METERS: f64 = 100.0;
 
+#[derive(Component)]
+pub struct DemoShip;
+
+#[derive(Resource, Default)]
+pub struct DemoShipsVisible(pub bool);
+
 pub fn spawn_demo_ships(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
@@ -18,6 +24,8 @@ pub fn spawn_demo_ships(
     map_root: Res<MapRoot>,
     water_settings: Res<WaterSettings>,
 ) {
+    commands.insert_resource(DemoShipsVisible(false));
+
     let demo_classes = [
         ShipClass::Default,
         ShipClass::Tug,
@@ -38,7 +46,7 @@ pub fn spawn_demo_ships(
         let east_offset_meters = index as f64 * DEMO_SHIP_SPACING_METERS;
         let lon = base_lon + longitude_offset_for_meters(east_offset_meters, base_lat);
 
-        let _ = spawn_ship_scene_entity(
+        let root = spawn_ship_scene_entity(
             &mut commands,
             &asset_server,
             &projection,
@@ -55,6 +63,30 @@ pub fn spawn_demo_ships(
             },
             Some(new_demo_physical_ship(ship_id, Entity::PLACEHOLDER)),
         );
+        commands
+            .entity(root)
+            .insert((DemoShip, Visibility::Hidden));
+    }
+}
+
+pub fn toggle_demo_ships(
+    input: Res<ButtonInput<KeyCode>>,
+    mut demo_visible: ResMut<DemoShipsVisible>,
+    mut demo_ships: Query<&mut Visibility, With<DemoShip>>,
+) {
+    if !input.just_pressed(KeyCode::KeyP) {
+        return;
+    }
+
+    demo_visible.0 = !demo_visible.0;
+    let visibility = if demo_visible.0 {
+        Visibility::Visible
+    } else {
+        Visibility::Hidden
+    };
+
+    for mut ship_visibility in &mut demo_ships {
+        *ship_visibility = visibility;
     }
 }
 
