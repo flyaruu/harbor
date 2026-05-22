@@ -1,5 +1,5 @@
 [workspace]
-members = ["harbor", "location-source", "location-viewer", "osm_pbf_processor"]
+members = ["harbor", "location-source", "osm_pbf_processor"]
 exclude = ["spacetimedb"]
 resolver = "2"
 

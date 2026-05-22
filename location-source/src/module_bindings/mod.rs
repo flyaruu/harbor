@@ -18,11 +18,8 @@ pub mod major_ais_ship_type_type;
 pub mod newest_location_report_time_table;
 pub mod oldest_location_report_time_table;
 pub mod oldest_location_report_time_type;
-pub mod project_ship_locations_reducer;
 pub mod set_current_projection_request_reducer;
 pub mod set_current_time_reducer;
-pub mod ship_projection_table;
-pub mod ship_projection_type;
 pub mod ship_table;
 pub mod ship_type;
 pub mod upsert_ship_static_data_reducer;
@@ -39,11 +36,8 @@ pub use major_ais_ship_type_type::MajorAisShipType;
 pub use newest_location_report_time_table::*;
 pub use oldest_location_report_time_table::*;
 pub use oldest_location_report_time_type::OldestLocationReportTime;
-pub use project_ship_locations_reducer::project_ship_locations;
 pub use set_current_projection_request_reducer::set_current_projection_request;
 pub use set_current_time_reducer::set_current_time;
-pub use ship_projection_table::*;
-pub use ship_projection_type::ShipProjection;
 pub use ship_table::*;
 pub use ship_type::Ship;
 pub use upsert_ship_static_data_reducer::upsert_ship_static_data;
@@ -69,10 +63,6 @@ pub enum Reducer {
         mmsi: u64,
     },
     BackfillMajorShipTypes,
-    ProjectShipLocations {
-        query_timestamp: __sdk::Timestamp,
-        visibility_window_micros: i64,
-    },
     SetCurrentProjectionRequest {
         query_timestamp: __sdk::Timestamp,
         visibility_window_micros: i64,
@@ -112,7 +102,6 @@ impl __sdk::Reducer for Reducer {
             Reducer::AddLocationReport { .. } => "add_location_report",
             Reducer::AddShip { .. } => "add_ship",
             Reducer::BackfillMajorShipTypes => "backfill_major_ship_types",
-            Reducer::ProjectShipLocations { .. } => "project_ship_locations",
             Reducer::SetCurrentProjectionRequest { .. } => "set_current_projection_request",
             Reducer::SetCurrentTime { .. } => "set_current_time",
             Reducer::UpsertShipStaticData { .. } => "upsert_ship_static_data",
@@ -147,13 +136,6 @@ impl __sdk::Reducer for Reducer {
             Reducer::BackfillMajorShipTypes => __sats::bsatn::to_vec(
                 &backfill_major_ship_types_reducer::BackfillMajorShipTypesArgs {},
             ),
-            Reducer::ProjectShipLocations {
-                query_timestamp,
-                visibility_window_micros,
-            } => __sats::bsatn::to_vec(&project_ship_locations_reducer::ProjectShipLocationsArgs {
-                query_timestamp: query_timestamp.clone(),
-                visibility_window_micros: visibility_window_micros.clone(),
-            }),
             Reducer::SetCurrentProjectionRequest {
                 query_timestamp,
                 visibility_window_micros,
@@ -223,7 +205,6 @@ pub struct DbUpdate {
     newest_location_report_time: __sdk::TableUpdate<OldestLocationReportTime>,
     oldest_location_report_time: __sdk::TableUpdate<OldestLocationReportTime>,
     ship: __sdk::TableUpdate<Ship>,
-    ship_projection: __sdk::TableUpdate<ShipProjection>,
 }
 
 impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
@@ -247,9 +228,6 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "ship" => db_update
                     .ship
                     .append(ship_table::parse_table_update(table_update)?),
-                "ship_projection" => db_update
-                    .ship_projection
-                    .append(ship_projection_table::parse_table_update(table_update)?),
 
                 unknown => {
                     return Err(__sdk::InternalError::unknown_name(
@@ -282,9 +260,6 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.ship = cache
             .apply_diff_to_table::<Ship>("ship", &self.ship)
             .with_updates_by_pk(|row| &row.mmsi);
-        diff.ship_projection = cache
-            .apply_diff_to_table::<ShipProjection>("ship_projection", &self.ship_projection)
-            .with_updates_by_pk(|row| &row.ship_mmsi);
         diff.current_ship_projection = cache.apply_diff_to_table::<CurrentShipProjection>(
             "current_ship_projection",
             &self.current_ship_projection,
@@ -319,9 +294,6 @@ impl __sdk::DbUpdate for DbUpdate {
                 "ship" => db_update
                     .ship
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "ship_projection" => db_update
-                    .ship_projection
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 unknown => {
                     return Err(
                         __sdk::InternalError::unknown_name("table", unknown, "QueryRows").into(),
@@ -350,9 +322,6 @@ impl __sdk::DbUpdate for DbUpdate {
                 "ship" => db_update
                     .ship
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "ship_projection" => db_update
-                    .ship_projection
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 unknown => {
                     return Err(
                         __sdk::InternalError::unknown_name("table", unknown, "QueryRows").into(),
@@ -373,7 +342,6 @@ pub struct AppliedDiff<'r> {
     newest_location_report_time: __sdk::TableAppliedDiff<'r, OldestLocationReportTime>,
     oldest_location_report_time: __sdk::TableAppliedDiff<'r, OldestLocationReportTime>,
     ship: __sdk::TableAppliedDiff<'r, Ship>,
-    ship_projection: __sdk::TableAppliedDiff<'r, ShipProjection>,
     __unused: std::marker::PhantomData<&'r ()>,
 }
 
@@ -408,11 +376,6 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
             event,
         );
         callbacks.invoke_table_row_callbacks::<Ship>("ship", &self.ship, event);
-        callbacks.invoke_table_row_callbacks::<ShipProjection>(
-            "ship_projection",
-            &self.ship_projection,
-            event,
-        );
     }
 }
 
@@ -1078,7 +1041,6 @@ impl __sdk::SpacetimeModule for RemoteModule {
         newest_location_report_time_table::register_table(client_cache);
         oldest_location_report_time_table::register_table(client_cache);
         ship_table::register_table(client_cache);
-        ship_projection_table::register_table(client_cache);
     }
     const ALL_TABLE_NAMES: &'static [&'static str] = &[
         "current_ship_projection",
@@ -1086,6 +1048,5 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "newest_location_report_time",
         "oldest_location_report_time",
         "ship",
-        "ship_projection",
     ];
 }

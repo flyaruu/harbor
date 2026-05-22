@@ -369,7 +369,7 @@ pub fn log_camera_pose_every_five_seconds(
     let tile_space_position = world_to_tile_space_point(*projection, position);
     let tile_space_focus = world_to_tile_space_point(*projection, focus);
 
-    info!(
+    debug!(
         position = ?position,
         focus = ?focus,
         tile_position = ?tile_space_position.tile,

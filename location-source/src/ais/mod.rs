@@ -7,7 +7,6 @@ use std::io::ErrorKind;
 use std::io::{LineWriter, Write};
 use std::net::TcpStream;
 use std::path::Path;
-use std::str::from_utf8;
 use std::thread;
 use std::time::Duration;
 

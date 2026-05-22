@@ -63,9 +63,7 @@ pub fn spawn_demo_ships(
             },
             Some(new_demo_physical_ship(ship_id, Entity::PLACEHOLDER)),
         );
-        commands
-            .entity(root)
-            .insert((DemoShip, Visibility::Hidden));
+        commands.entity(root).insert((DemoShip, Visibility::Hidden));
     }
 }
 

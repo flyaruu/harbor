@@ -63,7 +63,7 @@ impl ShipClass {
             },
             Self::Speedboat => ShipClassSpec {
                 scene_path: "models/speedboat.glb",
-                model_translation: Vec3::new(0.0, 1.0, 0.0),
+                model_translation: Vec3::new(0.0, -1.0, 0.0),
                 // Combine X and Y rotations by multiplying quaternions
                 model_rotation: Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2)
                     * Quat::from_rotation_z(-std::f32::consts::FRAC_PI_2),

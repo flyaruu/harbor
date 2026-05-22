@@ -50,22 +50,6 @@ pub struct LocationReport {
     sog: Option<f64>,
     timestamp: Timestamp,
 }
-
-#[derive(PartialEq)]
-#[spacetimedb::table(accessor = ship_projection, public)]
-pub struct ShipProjection {
-    #[primary_key]
-    ship_mmsi: u64,
-    query_timestamp: Timestamp,
-    lat: f64,
-    lon: f64,
-    cog: Option<f64>,
-    sog: Option<f64>,
-    before_timestamp: Timestamp,
-    after_timestamp: Option<Timestamp>,
-    used_dead_reckoning: bool,
-}
-
 #[spacetimedb::table(accessor = current_projection_request)]
 pub struct CurrentProjectionRequest {
     #[primary_key]
@@ -784,63 +768,6 @@ pub fn set_current_projection_request(
             .update(next_row);
     } else {
         ctx.db.current_projection_request().insert(next_row);
-    }
-
-    Ok(())
-}
-
-#[spacetimedb::reducer]
-pub fn project_ship_locations(
-    ctx: &ReducerContext,
-    query_timestamp: Timestamp,
-    visibility_window_micros: i64,
-) -> Result<(), String> {
-    let (window_start, window_end_exclusive) =
-        projection_window_bounds(query_timestamp, visibility_window_micros)?;
-
-    let windows = collect_report_windows(
-        ctx.db
-            .location_report()
-            .by_time()
-            .filter(window_start..window_end_exclusive),
-        query_timestamp,
-    );
-
-    let projections = build_projection_estimates(windows, query_timestamp);
-
-    let existing_projections: BTreeMap<u64, ShipProjection> = ctx
-        .db
-        .ship_projection()
-        .iter()
-        .map(|projection| (projection.ship_mmsi, projection))
-        .collect();
-
-    for ship_mmsi in existing_projections.keys() {
-        if !projections.contains_key(ship_mmsi) {
-            ctx.db.ship_projection().ship_mmsi().delete(ship_mmsi);
-        }
-    }
-
-    for (ship_mmsi, projection) in projections {
-        let next_row = ShipProjection {
-            ship_mmsi,
-            query_timestamp: projection.query_timestamp,
-            lat: projection.lat,
-            lon: projection.lon,
-            cog: projection.cog,
-            sog: projection.sog,
-            before_timestamp: projection.before_timestamp,
-            after_timestamp: projection.after_timestamp,
-            used_dead_reckoning: projection.used_dead_reckoning,
-        };
-
-        if let Some(existing) = existing_projections.get(&ship_mmsi) {
-            if existing != &next_row {
-                ctx.db.ship_projection().ship_mmsi().update(next_row);
-            }
-        } else {
-            ctx.db.ship_projection().insert(next_row);
-        }
     }
 
     Ok(())
