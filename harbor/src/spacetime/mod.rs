@@ -3,7 +3,7 @@ use bevy_stdb::prelude::*;
 use bevy_water::WaterSettings;
 use spacetimedb_sdk::Table;
 use spacetimedb_sdk::Timestamp;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
@@ -40,6 +40,13 @@ struct ProjectionRefreshTiming {
     completed_count: u64,
 }
 
+#[derive(Default, Resource)]
+struct ProjectionCache {
+    rows: HashMap<u64, CurrentShipProjection>,
+    pending_inserts: HashMap<u64, CurrentShipProjection>,
+    pending_deletes: HashSet<u64>,
+}
+
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum SubscriptionKey {
     GlobalState,
@@ -51,6 +58,7 @@ enum SubscriptionKey {
 impl Plugin for SpacetimePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<ProjectionRefreshTiming>()
+            .init_resource::<ProjectionCache>()
             .add_plugins(stdb_plugin())
             .add_systems(
                 Update,
@@ -62,6 +70,9 @@ impl Plugin for SpacetimePlugin {
                         sync_initial_timestamp_from_cache,
                         advance_timestamp_playback,
                         request_current_projection_on_timestamp_change,
+                        on_projection_inserted,
+                        on_projection_deleted,
+                        apply_projection_cache_updates,
                     )
                         .chain(),
                     reconcile_projected_ships_from_cache,
@@ -297,7 +308,7 @@ fn reconcile_projected_ships_from_cache(
     water_settings: Res<WaterSettings>,
     map_root: Res<MapRoot>,
     connection: Option<Res<StdbConn>>,
-    mut projection_timing: ResMut<ProjectionRefreshTiming>,
+    projection_cache: Res<ProjectionCache>,
     mut projected_ships: Query<(Entity, &mut ProjectedShip)>,
     physical_ships: Query<(Entity, &PhysicalShip)>,
 ) {
@@ -307,7 +318,7 @@ fn reconcile_projected_ships_from_cache(
 
     let mut visible_ship_ids = HashSet::new();
 
-    for projection_row in connection.db().current_ship_projection().iter() {
+    for projection_row in projection_cache.rows.values() {
         visible_ship_ids.insert(projection_row.ship_mmsi);
         sync_projected_ship_entity(
             &mut commands,
@@ -337,16 +348,6 @@ fn reconcile_projected_ships_from_cache(
         }
     }
 
-    if let Some(started_at) = projection_timing.started_at.take() {
-        projection_timing.completed_count += 1;
-        if projection_timing.completed_count % 10 == 0 {
-            info!(
-                refresh_count = projection_timing.completed_count,
-                elapsed_ms = started_at.elapsed().as_secs_f64() * 1000.0,
-                "current ship projection refresh completed"
-            );
-        }
-    }
 }
 
 fn spacetimedb_uri() -> String {
@@ -508,6 +509,66 @@ fn sync_physical_ship_name(
                 .entity(entity)
                 .insert(Name::new(ship_name.to_owned()));
             break;
+        }
+    }
+}
+
+fn on_projection_inserted(
+    mut messages: ReadInsertMessage<CurrentShipProjection>,
+    mut projection_cache: ResMut<ProjectionCache>,
+) {
+    for msg in messages.read() {
+        let row = msg.row.clone();
+        projection_cache.pending_deletes.remove(&row.ship_mmsi);
+        projection_cache.pending_inserts.insert(row.ship_mmsi, row);
+    }
+}
+
+fn on_projection_deleted(
+    mut messages: ReadDeleteMessage<CurrentShipProjection>,
+    mut projection_cache: ResMut<ProjectionCache>,
+) {
+    for msg in messages.read() {
+        let row = &msg.row;
+
+        if projection_cache.pending_inserts.contains_key(&row.ship_mmsi) {
+            continue;
+        }
+
+        projection_cache.pending_deletes.insert(row.ship_mmsi);
+    }
+}
+
+fn apply_projection_cache_updates(
+    mut projection_cache: ResMut<ProjectionCache>,
+    mut projection_timing: ResMut<ProjectionRefreshTiming>,
+) {
+    let had_pending_updates =
+        !projection_cache.pending_inserts.is_empty() || !projection_cache.pending_deletes.is_empty();
+
+    if !had_pending_updates {
+        return;
+    }
+
+    let pending_deletes = projection_cache.pending_deletes.drain().collect::<Vec<_>>();
+    let pending_inserts = projection_cache.pending_inserts.drain().collect::<Vec<_>>();
+
+    for ship_id in pending_deletes {
+        projection_cache.rows.remove(&ship_id);
+    }
+
+    for (ship_id, row) in pending_inserts {
+        projection_cache.rows.insert(ship_id, row);
+    }
+
+    if let Some(started_at) = projection_timing.started_at.take() {
+        projection_timing.completed_count += 1;
+        if projection_timing.completed_count % 10 == 0 {
+            info!(
+                refresh_count = projection_timing.completed_count,
+                elapsed_ms = started_at.elapsed().as_secs_f64() * 1000.0,
+                "current ship projection refresh completed"
+            );
         }
     }
 }
