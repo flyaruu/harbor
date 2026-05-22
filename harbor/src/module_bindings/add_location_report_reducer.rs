@@ -66,11 +66,9 @@ pub trait add_location_report {
         cog: Option<f64>,
         sog: Option<f64>,
 
-        callback: impl FnOnce(
-            &super::ReducerEventContext,
-            Result<Result<(), String>, __sdk::InternalError>,
-        ) + Send
-        + 'static,
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -83,11 +81,9 @@ impl add_location_report for super::RemoteReducers {
         cog: Option<f64>,
         sog: Option<f64>,
 
-        callback: impl FnOnce(
-            &super::ReducerEventContext,
-            Result<Result<(), String>, __sdk::InternalError>,
-        ) + Send
-        + 'static,
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
     ) -> __sdk::Result<()> {
         self.imp.invoke_reducer_with_callback(
             AddLocationReportArgs {

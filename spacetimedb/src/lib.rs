@@ -4,8 +4,13 @@ use spacetimedb::{
     ReducerContext, SpacetimeType, Table, TimeDuration, Timestamp, ViewContext, view,
 };
 
+mod global;
 mod mmsi_types;
+
+use global::{GlobalState, global_state};
 use mmsi_types::MajorAisShipType;
+
+const GLOBAL_STATE_ID: u8 = 0;
 #[derive(PartialEq)]
 #[spacetimedb::table(accessor = ship, public)]
 pub struct Ship {
@@ -97,11 +102,6 @@ struct ShipStaticUpdate {
 }
 
 #[derive(SpacetimeType, Clone, Debug)]
-pub struct OldestLocationReportTime {
-    timestamp: Timestamp,
-}
-
-#[derive(SpacetimeType, Clone, Debug)]
 pub struct CurrentShipProjection {
     ship_mmsi: u64,
     query_timestamp: Timestamp,
@@ -135,7 +135,23 @@ fn insert_location_report(
         sog,
         timestamp: ctx.timestamp,
     });
-    let _ = row;
+
+    if let Some(global_state) = ctx.db.global_state().id().find(&GLOBAL_STATE_ID) {
+        let oldest = Some(global_state.oldest.map_or(row.timestamp, |oldest| oldest.min(row.timestamp)));
+        let newest = Some(global_state.newest.map_or(row.timestamp, |newest| newest.max(row.timestamp)));
+
+        ctx.db.global_state().id().update(GlobalState {
+            oldest,
+            newest,
+            ..global_state
+        });
+    } else {
+        ctx.db.global_state().insert(GlobalState {
+            id: GLOBAL_STATE_ID,
+            oldest: Some(row.timestamp),
+            newest: Some(row.timestamp),
+        });
+    }
 
     Ok(())
 }
@@ -681,36 +697,6 @@ pub fn set_current_time(_ctx: &ReducerContext, timestamp: Timestamp) -> Result<(
         .checked_add(TimeDuration::from_micros(60_000_000))
         .ok_or("Timestamp overflow")?;
     Ok(())
-}
-
-#[view(accessor = oldest_location_report_time, public)]
-pub fn oldest_location_report_time(ctx: &ViewContext) -> Option<OldestLocationReportTime> {
-    let report = ctx
-        .db
-        .location_report()
-        .by_time()
-        .filter(Timestamp::UNIX_EPOCH..)
-        .next()?;
-
-    Some(OldestLocationReportTime {
-        timestamp: report.timestamp,
-    })
-}
-
-// Note that it isn't very efficient to scan through all reports to find the newest timestamp, but this is just an example.
-#[view(accessor = newest_location_report_time, public)]
-pub fn newest_location_report_time(ctx: &ViewContext) -> Option<OldestLocationReportTime> {
-    let mut newest = None;
-    for report in ctx
-        .db
-        .location_report()
-        .by_time()
-        .filter(Timestamp::UNIX_EPOCH..)
-    {
-        newest = Some(report.timestamp);
-    }
-
-    Some(OldestLocationReportTime { timestamp: newest? })
 }
 
 #[view(accessor = current_ship_projection, public)]

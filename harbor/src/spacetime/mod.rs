@@ -12,10 +12,9 @@ use web_time::Instant;
 
 use crate::map::{MapRoot, TileWorldProjection};
 use crate::module_bindings::{
-    CurrentShipProjection, CurrentShipProjectionTableAccess, DbConnection, LocationReport,
-    LocationReportTableAccess, NewestLocationReportTimeTableAccess,
-    OldestLocationReportTimeTableAccess, RemoteModule, Ship, ShipTableAccess,
-    set_current_projection_request,
+    CurrentShipProjection, CurrentShipProjectionTableAccess, DbConnection, GlobalState,
+    GlobalStateTableAccess, LocationReport, LocationReportTableAccess, RemoteModule, Ship,
+    ShipTableAccess, set_current_projection_request,
 };
 use crate::ship::{PhysicalShip, ProjectedShip, spawn_projected_ship_pair};
 use crate::ship_class::ShipClass;
@@ -25,8 +24,7 @@ use crate::ui::{
 
 const DEFAULT_SPACETIMEDB_URI: &str = "http://localhost:3000";
 const DEFAULT_SPACETIMEDB_MODULE: &str = "ship-spacetime";
-const NEWEST_LOCATION_REPORT_TIME_SQL: &str = "SELECT * FROM newest_location_report_time";
-const OLDEST_LOCATION_REPORT_TIME_SQL: &str = "SELECT * FROM oldest_location_report_time";
+const GLOBAL_STATE_SQL: &str = "SELECT * FROM global_state";
 const LOCATION_REPORT_SQL: &str = "SELECT * FROM location_report";
 const SHIP_SQL: &str = "SELECT * FROM ship";
 const CURRENT_SHIP_PROJECTION_SQL: &str = "SELECT * FROM current_ship_projection";
@@ -44,8 +42,7 @@ struct ProjectionRefreshTiming {
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum SubscriptionKey {
-    NewestLocationReportTime,
-    OldestLocationReportTime,
+    GlobalState,
     LocationReport,
     Ship,
     CurrentShipProjection,
@@ -86,8 +83,10 @@ fn stdb_plugin() -> impl Plugin {
         .with_eager_connection()
         .with_database_name(spacetimedb_module())
         .with_uri(spacetimedb_uri())
+        .add_table::<GlobalState>(|reg, db| reg.bind(db.global_state()))
         .add_table::<LocationReport>(|reg, db| reg.bind(db.location_report()))
         .add_table::<Ship>(|reg, db| reg.bind(db.ship()))
+        .add_view(|reg, db| reg.bind(db.current_ship_projection()))
         .with_subscriptions::<SubscriptionKey>()
         .with_reconnect(StdbReconnectOptions::default())
         .with_background_driver(driver);
@@ -113,14 +112,7 @@ fn subscribe_on_connect(
         spacetimedb_uri()
     );
 
-    subscriptions.subscribe_sql(
-        SubscriptionKey::NewestLocationReportTime,
-        NEWEST_LOCATION_REPORT_TIME_SQL,
-    );
-    subscriptions.subscribe_sql(
-        SubscriptionKey::OldestLocationReportTime,
-        OLDEST_LOCATION_REPORT_TIME_SQL,
-    );
+    subscriptions.subscribe_sql(SubscriptionKey::GlobalState, GLOBAL_STATE_SQL);
     subscriptions.subscribe_sql(SubscriptionKey::LocationReport, LOCATION_REPORT_SQL);
     subscriptions.subscribe_sql(SubscriptionKey::Ship, SHIP_SQL);
     subscriptions.subscribe_sql(
@@ -169,12 +161,16 @@ fn sync_initial_timestamp_from_cache(
         return;
     };
 
-    let Some(oldest) = connection.db().oldest_location_report_time().iter().next() else {
+    let Some(global_state) = connection.db().global_state().iter().next() else {
         return;
     };
 
-    let Ok(oldest_timestamp) = oldest.timestamp.to_chrono_date_time() else {
-        warn!("failed to convert oldest_location_report_time timestamp");
+    let Some(oldest) = global_state.oldest else {
+        return;
+    };
+
+    let Ok(oldest_timestamp) = oldest.to_chrono_date_time() else {
+        warn!("failed to convert global_state.oldest timestamp");
         return;
     };
 
@@ -190,41 +186,37 @@ fn sync_timestamp_bounds_from_cache(
         return;
     };
 
-    let oldest = connection
-        .db()
-        .oldest_location_report_time()
-        .iter()
-        .next()
-        .and_then(|row| row.timestamp.to_chrono_date_time().ok());
-    let newest = connection
-        .db()
-        .newest_location_report_time()
-        .iter()
-        .next()
-        .and_then(|row| row.timestamp.to_chrono_date_time().ok());
+    if let Some(global_state) = connection.db().global_state().iter().next() {
+        let oldest = global_state
+            .oldest
+            .and_then(|timestamp| timestamp.to_chrono_date_time().ok());
+        let newest = global_state
+            .newest
+            .and_then(|timestamp| timestamp.to_chrono_date_time().ok());
 
-    // Subscription caches can populate oldest/newest at different times and can briefly drop one
-    // side during delete/insert refreshes. Merge each side independently, but if a one-sided update
-    // would invert the range, clear the stale opposite side instead of preserving a hybrid pair.
-    let mut merged_oldest = oldest.or(bounds.oldest);
-    let mut merged_newest = newest.or(bounds.newest);
-
-    if let (Some(merged_oldest_value), Some(merged_newest_value)) = (merged_oldest, merged_newest)
-        && merged_oldest_value > merged_newest_value
-    {
-        match (oldest.is_some(), newest.is_some()) {
-            (true, false) => merged_newest = None,
-            (false, true) => merged_oldest = None,
-            _ => {
-                merged_oldest = bounds.oldest;
-                merged_newest = bounds.newest;
-            }
+        if bounds.oldest != oldest || bounds.newest != newest {
+            bounds.oldest = oldest;
+            bounds.newest = newest;
         }
+
+        return;
     }
 
-    if bounds.oldest != merged_oldest || bounds.newest != merged_newest {
-        bounds.oldest = merged_oldest;
-        bounds.newest = merged_newest;
+    let mut oldest = bounds.oldest;
+    let mut newest = bounds.newest;
+
+    for row in connection.db().location_report().iter() {
+        let Ok(timestamp) = row.timestamp.to_chrono_date_time() else {
+            continue;
+        };
+
+        oldest = Some(oldest.map_or(timestamp, |current| current.min(timestamp)));
+        newest = Some(newest.map_or(timestamp, |current| current.max(timestamp)));
+    }
+
+    if bounds.oldest != oldest || bounds.newest != newest {
+        bounds.oldest = oldest;
+        bounds.newest = newest;
     }
 }
 

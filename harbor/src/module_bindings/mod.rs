@@ -12,12 +12,11 @@ pub mod backfill_major_ship_types_reducer;
 pub mod current_projection_request_type;
 pub mod current_ship_projection_table;
 pub mod current_ship_projection_type;
+pub mod global_state_table;
+pub mod global_state_type;
 pub mod location_report_table;
 pub mod location_report_type;
 pub mod major_ais_ship_type_type;
-pub mod newest_location_report_time_table;
-pub mod oldest_location_report_time_table;
-pub mod oldest_location_report_time_type;
 pub mod set_current_projection_request_reducer;
 pub mod set_current_time_reducer;
 pub mod ship_table;
@@ -30,12 +29,11 @@ pub use backfill_major_ship_types_reducer::backfill_major_ship_types;
 pub use current_projection_request_type::CurrentProjectionRequest;
 pub use current_ship_projection_table::*;
 pub use current_ship_projection_type::CurrentShipProjection;
+pub use global_state_table::*;
+pub use global_state_type::GlobalState;
 pub use location_report_table::*;
 pub use location_report_type::LocationReport;
 pub use major_ais_ship_type_type::MajorAisShipType;
-pub use newest_location_report_time_table::*;
-pub use oldest_location_report_time_table::*;
-pub use oldest_location_report_time_type::OldestLocationReportTime;
 pub use set_current_projection_request_reducer::set_current_projection_request;
 pub use set_current_time_reducer::set_current_time;
 pub use ship_table::*;
@@ -201,9 +199,8 @@ impl __sdk::Reducer for Reducer {
 #[doc(hidden)]
 pub struct DbUpdate {
     current_ship_projection: __sdk::TableUpdate<CurrentShipProjection>,
+    global_state: __sdk::TableUpdate<GlobalState>,
     location_report: __sdk::TableUpdate<LocationReport>,
-    newest_location_report_time: __sdk::TableUpdate<OldestLocationReportTime>,
-    oldest_location_report_time: __sdk::TableUpdate<OldestLocationReportTime>,
     ship: __sdk::TableUpdate<Ship>,
 }
 
@@ -216,15 +213,12 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "current_ship_projection" => db_update.current_ship_projection.append(
                     current_ship_projection_table::parse_table_update(table_update)?,
                 ),
+                "global_state" => db_update
+                    .global_state
+                    .append(global_state_table::parse_table_update(table_update)?),
                 "location_report" => db_update
                     .location_report
                     .append(location_report_table::parse_table_update(table_update)?),
-                "newest_location_report_time" => db_update.newest_location_report_time.append(
-                    newest_location_report_time_table::parse_table_update(table_update)?,
-                ),
-                "oldest_location_report_time" => db_update.oldest_location_report_time.append(
-                    oldest_location_report_time_table::parse_table_update(table_update)?,
-                ),
                 "ship" => db_update
                     .ship
                     .append(ship_table::parse_table_update(table_update)?),
@@ -254,6 +248,9 @@ impl __sdk::DbUpdate for DbUpdate {
     ) -> AppliedDiff<'_> {
         let mut diff = AppliedDiff::default();
 
+        diff.global_state = cache
+            .apply_diff_to_table::<GlobalState>("global_state", &self.global_state)
+            .with_updates_by_pk(|row| &row.id);
         diff.location_report = cache
             .apply_diff_to_table::<LocationReport>("location_report", &self.location_report)
             .with_updates_by_pk(|row| &row.id);
@@ -263,14 +260,6 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.current_ship_projection = cache.apply_diff_to_table::<CurrentShipProjection>(
             "current_ship_projection",
             &self.current_ship_projection,
-        );
-        diff.newest_location_report_time = cache.apply_diff_to_table::<OldestLocationReportTime>(
-            "newest_location_report_time",
-            &self.newest_location_report_time,
-        );
-        diff.oldest_location_report_time = cache.apply_diff_to_table::<OldestLocationReportTime>(
-            "oldest_location_report_time",
-            &self.oldest_location_report_time,
         );
 
         diff
@@ -282,14 +271,11 @@ impl __sdk::DbUpdate for DbUpdate {
                 "current_ship_projection" => db_update
                     .current_ship_projection
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "global_state" => db_update
+                    .global_state
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "location_report" => db_update
                     .location_report
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "newest_location_report_time" => db_update
-                    .newest_location_report_time
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "oldest_location_report_time" => db_update
-                    .oldest_location_report_time
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "ship" => db_update
                     .ship
@@ -310,14 +296,11 @@ impl __sdk::DbUpdate for DbUpdate {
                 "current_ship_projection" => db_update
                     .current_ship_projection
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "global_state" => db_update
+                    .global_state
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "location_report" => db_update
                     .location_report
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "newest_location_report_time" => db_update
-                    .newest_location_report_time
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "oldest_location_report_time" => db_update
-                    .oldest_location_report_time
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "ship" => db_update
                     .ship
@@ -338,9 +321,8 @@ impl __sdk::DbUpdate for DbUpdate {
 #[doc(hidden)]
 pub struct AppliedDiff<'r> {
     current_ship_projection: __sdk::TableAppliedDiff<'r, CurrentShipProjection>,
+    global_state: __sdk::TableAppliedDiff<'r, GlobalState>,
     location_report: __sdk::TableAppliedDiff<'r, LocationReport>,
-    newest_location_report_time: __sdk::TableAppliedDiff<'r, OldestLocationReportTime>,
-    oldest_location_report_time: __sdk::TableAppliedDiff<'r, OldestLocationReportTime>,
     ship: __sdk::TableAppliedDiff<'r, Ship>,
     __unused: std::marker::PhantomData<&'r ()>,
 }
@@ -360,19 +342,14 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
             &self.current_ship_projection,
             event,
         );
+        callbacks.invoke_table_row_callbacks::<GlobalState>(
+            "global_state",
+            &self.global_state,
+            event,
+        );
         callbacks.invoke_table_row_callbacks::<LocationReport>(
             "location_report",
             &self.location_report,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<OldestLocationReportTime>(
-            "newest_location_report_time",
-            &self.newest_location_report_time,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<OldestLocationReportTime>(
-            "oldest_location_report_time",
-            &self.oldest_location_report_time,
             event,
         );
         callbacks.invoke_table_row_callbacks::<Ship>("ship", &self.ship, event);
@@ -631,19 +608,19 @@ impl __sdk::SubscriptionHandle for SubscriptionHandle {
 /// either a [`DbConnection`] or an [`EventContext`] and operate on either.
 pub trait RemoteDbContext:
     __sdk::DbContext<
-        DbView = RemoteTables,
-        Reducers = RemoteReducers,
-        SubscriptionBuilder = __sdk::SubscriptionBuilder<RemoteModule>,
-    >
+    DbView = RemoteTables,
+    Reducers = RemoteReducers,
+    SubscriptionBuilder = __sdk::SubscriptionBuilder<RemoteModule>,
+>
 {
 }
 impl<
-    Ctx: __sdk::DbContext<
+        Ctx: __sdk::DbContext<
             DbView = RemoteTables,
             Reducers = RemoteReducers,
             SubscriptionBuilder = __sdk::SubscriptionBuilder<RemoteModule>,
         >,
-> RemoteDbContext for Ctx
+    > RemoteDbContext for Ctx
 {
 }
 
@@ -1037,16 +1014,14 @@ impl __sdk::SpacetimeModule for RemoteModule {
 
     fn register_tables(client_cache: &mut __sdk::ClientCache<Self>) {
         current_ship_projection_table::register_table(client_cache);
+        global_state_table::register_table(client_cache);
         location_report_table::register_table(client_cache);
-        newest_location_report_time_table::register_table(client_cache);
-        oldest_location_report_time_table::register_table(client_cache);
         ship_table::register_table(client_cache);
     }
     const ALL_TABLE_NAMES: &'static [&'static str] = &[
         "current_ship_projection",
+        "global_state",
         "location_report",
-        "newest_location_report_time",
-        "oldest_location_report_time",
         "ship",
     ];
 }
