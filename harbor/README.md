@@ -32,6 +32,17 @@ Desktop:
 cargo run
 ```
 
+## Performance Tooling
+
+- An FPS and frame-time overlay is shown in the bottom-right corner by default.
+- For per-system and per-frame timing breakdowns, run Harbor with Bevy's Chrome trace instrumentation enabled:
+
+```bash
+cargo run -p harbor --features chrome_trace
+```
+
+Then open the generated trace in [Perfetto](https://ui.perfetto.dev/) or `chrome://tracing`.
+
 Wasm/browser:
 
 1. Install the wasm target:

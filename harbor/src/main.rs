@@ -5,6 +5,7 @@ use bevy_panorbit_wasd_camera::PanOrbitCameraPlugin;
 use bevy_water::WaterSettings;
 
 use crate::light::animate_light_direction;
+use crate::perf::PerformancePlugin;
 use crate::ship::SelectedShipRoute;
 use crate::spacetime::SpacetimePlugin;
 use crate::ui::{
@@ -19,6 +20,7 @@ mod demo;
 mod light;
 mod map;
 mod module_bindings;
+mod perf;
 mod ship;
 mod ship_class;
 mod spacetime;
@@ -42,6 +44,7 @@ fn main() {
     }))
     .add_plugins(ObjPlugin)
     .add_plugins(EguiPlugin::default())
+    .add_plugins(PerformancePlugin)
     .add_plugins(SpacetimePlugin)
     .add_plugins(PanOrbitCameraPlugin)
     .insert_resource(ClearColor(Color::srgb(0.07, 0.09, 0.12)))

@@ -8,7 +8,6 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 pub mod add_location_report_reducer;
 pub mod add_ship_reducer;
-pub mod backfill_major_ship_types_reducer;
 pub mod current_projection_request_type;
 pub mod current_ship_projection_table;
 pub mod current_ship_projection_type;
@@ -18,14 +17,12 @@ pub mod location_report_table;
 pub mod location_report_type;
 pub mod major_ais_ship_type_type;
 pub mod set_current_projection_request_reducer;
-pub mod set_current_time_reducer;
 pub mod ship_table;
 pub mod ship_type;
 pub mod upsert_ship_static_data_reducer;
 
 pub use add_location_report_reducer::add_location_report;
 pub use add_ship_reducer::add_ship;
-pub use backfill_major_ship_types_reducer::backfill_major_ship_types;
 pub use current_projection_request_type::CurrentProjectionRequest;
 pub use current_ship_projection_table::*;
 pub use current_ship_projection_type::CurrentShipProjection;
@@ -35,7 +32,6 @@ pub use location_report_table::*;
 pub use location_report_type::LocationReport;
 pub use major_ais_ship_type_type::MajorAisShipType;
 pub use set_current_projection_request_reducer::set_current_projection_request;
-pub use set_current_time_reducer::set_current_time;
 pub use ship_table::*;
 pub use ship_type::Ship;
 pub use upsert_ship_static_data_reducer::upsert_ship_static_data;
@@ -60,13 +56,9 @@ pub enum Reducer {
         call_sign: Option<String>,
         mmsi: u64,
     },
-    BackfillMajorShipTypes,
     SetCurrentProjectionRequest {
         query_timestamp: __sdk::Timestamp,
         visibility_window_micros: i64,
-    },
-    SetCurrentTime {
-        timestamp: __sdk::Timestamp,
     },
     UpsertShipStaticData {
         mmsi: u64,
@@ -99,9 +91,7 @@ impl __sdk::Reducer for Reducer {
         match self {
             Reducer::AddLocationReport { .. } => "add_location_report",
             Reducer::AddShip { .. } => "add_ship",
-            Reducer::BackfillMajorShipTypes => "backfill_major_ship_types",
             Reducer::SetCurrentProjectionRequest { .. } => "set_current_projection_request",
-            Reducer::SetCurrentTime { .. } => "set_current_time",
             Reducer::UpsertShipStaticData { .. } => "upsert_ship_static_data",
             _ => unreachable!(),
         }
@@ -131,9 +121,6 @@ impl __sdk::Reducer for Reducer {
                 call_sign: call_sign.clone(),
                 mmsi: mmsi.clone(),
             }),
-            Reducer::BackfillMajorShipTypes => __sats::bsatn::to_vec(
-                &backfill_major_ship_types_reducer::BackfillMajorShipTypesArgs {},
-            ),
             Reducer::SetCurrentProjectionRequest {
                 query_timestamp,
                 visibility_window_micros,
@@ -143,11 +130,6 @@ impl __sdk::Reducer for Reducer {
                     visibility_window_micros: visibility_window_micros.clone(),
                 },
             ),
-            Reducer::SetCurrentTime { timestamp } => {
-                __sats::bsatn::to_vec(&set_current_time_reducer::SetCurrentTimeArgs {
-                    timestamp: timestamp.clone(),
-                })
-            }
             Reducer::UpsertShipStaticData {
                 mmsi,
                 name,

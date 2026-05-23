@@ -7,6 +7,7 @@ use bevy::scene::{SceneInstanceReady, SceneSpawner};
 use bevy::window::PrimaryWindow;
 use bevy_egui::input::EguiWantsInput;
 use bevy_water::WaterSettings;
+use chrono::{DateTime, Utc};
 use spacetimedb_sdk::Table;
 use std::path::Path;
 
@@ -393,6 +394,7 @@ pub fn select_ship_on_click(
     ship_info.speed_over_ground = ship.sog;
     ship_info.latitude = ship.lat;
     ship_info.longitude = ship.lon;
+    ship_info.last_location_report_timestamp = None;
 
     if let Some(physical_ship) = physical_ship {
         let ship_row = connection
@@ -415,6 +417,10 @@ pub fn select_ship_on_click(
             ship_info.dimension_c = ship_row.dimension_c;
             ship_info.dimension_d = ship_row.dimension_d;
         }
+
+        ship_info.last_location_report_timestamp = connection
+            .as_deref()
+            .and_then(|connection| latest_ship_location_report_timestamp(connection, physical_ship.ship_id));
 
         if let Some(connection) = connection.as_deref() {
             spawn_selected_ship_route(
@@ -459,6 +465,9 @@ pub fn sync_selected_ship_info(
     ship_info.longitude = projected_ship.lon;
     ship_info.course_over_ground = projected_ship.cog;
     ship_info.speed_over_ground = projected_ship.sog;
+    ship_info.last_location_report_timestamp = connection
+        .as_deref()
+        .and_then(|connection| latest_ship_location_report_timestamp(connection, ship_id));
 
     if let Some(ship_row) = connection
         .as_deref()
@@ -565,6 +574,19 @@ fn ship_location_reports(connection: &StdbConn, ship_id: u64) -> Vec<LocationRep
     reports
 }
 
+fn latest_ship_location_report_timestamp(
+    connection: &StdbConn,
+    ship_id: u64,
+) -> Option<DateTime<Utc>> {
+    connection
+        .db()
+        .location_report()
+        .iter()
+        .filter(|row| row.ship_mmsi == ship_id)
+        .max_by_key(|row| row.timestamp)
+        .and_then(|row| row.timestamp.to_chrono_date_time().ok())
+}
+
 fn create_route(
     projection: &TileWorldProjection,
     location_reports: &[LocationReport],
@@ -669,6 +691,7 @@ fn clear_selected_ship(ship_info: &mut ShipInfoOverlay) {
     ship_info.speed_over_ground = None;
     ship_info.latitude = 0.0;
     ship_info.longitude = 0.0;
+    ship_info.last_location_report_timestamp = None;
 }
 
 fn despawn_selected_ship_route(commands: &mut Commands, selected_route: &mut SelectedShipRoute) {

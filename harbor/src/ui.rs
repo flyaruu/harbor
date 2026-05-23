@@ -39,6 +39,7 @@ pub struct ShipInfoOverlay {
     pub speed_over_ground: Option<f64>,
     pub latitude: f64,
     pub longitude: f64,
+    pub last_location_report_timestamp: Option<DateTime<Utc>>,
 }
 
 impl Default for ShipInfoOverlay {
@@ -57,6 +58,7 @@ impl Default for ShipInfoOverlay {
             speed_over_ground: Some(12.6),
             latitude: 51.9060,
             longitude: 4.4844,
+            last_location_report_timestamp: None,
         }
     }
 }
@@ -242,6 +244,11 @@ pub fn timestamp_ui(
                     "SOG",
                     &format_optional_f64(ship_info.speed_over_ground, "kn"),
                 );
+                info_row(
+                    ui,
+                    "Last Report",
+                    &format_optional_timestamp(ship_info.last_location_report_timestamp),
+                );
                 info_row(ui, "Lat", &format!("{:.4}", ship_info.latitude));
                 info_row(ui, "Lon", &format!("{:.4}", ship_info.longitude));
             });
@@ -341,6 +348,10 @@ fn format_optional_f64(value: Option<f64>, unit: &str) -> String {
     value
         .map(|value| format!("{value:.1} {unit}"))
         .unwrap_or_else(|| "-".to_owned())
+}
+
+fn format_optional_timestamp(value: Option<DateTime<Utc>>) -> String {
+    value.map(format_timestamp).unwrap_or_else(|| "-".to_owned())
 }
 
 fn format_ais_dimensions(ship_info: &ShipInfoOverlay) -> String {

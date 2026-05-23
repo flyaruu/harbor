@@ -658,26 +658,6 @@ pub fn upsert_ship_static_data(
 }
 
 #[spacetimedb::reducer]
-pub fn backfill_major_ship_types(ctx: &ReducerContext) -> Result<(), String> {
-    for ship in ctx.db.ship().iter() {
-        if ship.major_ship_type.is_some() {
-            continue;
-        }
-
-        let Some(ship_type) = ship.ship_type else {
-            continue;
-        };
-
-        ctx.db.ship().mmsi().update(Ship {
-            major_ship_type: Some(MajorAisShipType::from(ship_type)),
-            ..ship
-        });
-    }
-
-    Ok(())
-}
-
-#[spacetimedb::reducer]
 pub fn add_location_report(
     ctx: &ReducerContext,
     ship_mmsi: u64,
@@ -687,16 +667,6 @@ pub fn add_location_report(
     sog: Option<f64>,
 ) -> Result<(), String> {
     insert_location_report(ctx, ship_mmsi, lat, lon, cog, sog)
-}
-
-// const
-
-#[spacetimedb::reducer]
-pub fn set_current_time(_ctx: &ReducerContext, timestamp: Timestamp) -> Result<(), String> {
-    let _time2 = timestamp
-        .checked_add(TimeDuration::from_micros(60_000_000))
-        .ok_or("Timestamp overflow")?;
-    Ok(())
 }
 
 #[view(accessor = current_ship_projection, public)]

@@ -3,6 +3,10 @@ name = "harbor"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+default = []
+chrome_trace = ["bevy/trace_chrome"]
+
 [dependencies]
 bevy = { version = "0.18.1", features = ["default", "bevy_text", "bevy_gltf", "bevy_pbr", "shader_format_glsl", "tga"] }
 bevy_obj = "0.18.2"
