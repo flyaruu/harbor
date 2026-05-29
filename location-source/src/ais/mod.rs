@@ -106,9 +106,14 @@ impl AisFileLogger {
 pub(crate) fn run_ais(conn: DbConnection) -> Result<(), Box<dyn Error>> {
     let mut reconnect_delay = Duration::from_secs(1);
     let mut logger = AisFileLogger::new()?;
+    let aisstream_api_key: String = std::env::var("AISSTREAM_API_KEY")?;
+
+    if aisstream_api_key.is_empty() {
+        return Err("AISSTREAM_API_KEY environment variable is not set".into());
+    }
 
     loop {
-        match run_ais_session(&conn, &mut logger) {
+        match run_ais_session(&conn, &mut logger, &aisstream_api_key) {
             Ok(()) => {
                 reconnect_delay = Duration::from_secs(1);
             }
@@ -124,17 +129,15 @@ pub(crate) fn run_ais(conn: DbConnection) -> Result<(), Box<dyn Error>> {
     }
 }
 
-fn run_ais_session(conn: &DbConnection, logger: &mut AisFileLogger) -> Result<(), Box<dyn Error>> {
+fn run_ais_session(conn: &DbConnection, logger: &mut AisFileLogger, aisstream_api_key: &str) -> Result<(), Box<dyn Error>> {
     let aisstream_api_url: Uri = Uri::from_static("wss://stream.aisstream.io/v0/stream");
-    let aisstream_api_key: String = std::env::var("AISSTREAM_API_KEY").unwrap_or("".to_owned());
     let no_cert_validation = no_cert_validation_enabled();
-
     println!("Connecting `{aisstream_api_url}`");
     let (mut socket, _) = connect_ais_socket(&aisstream_api_url, no_cert_validation)?;
     set_socket_read_timeout(&mut socket, AIS_READ_TIMEOUT)?;
 
     let auth_request = AuthRequest {
-        api_key: aisstream_api_key,
+        api_key: aisstream_api_key.to_owned(),
         bounding_boxes: vec![[[51.809685, 3.931732], [52.041860, 4.619751]]],
     };
 
@@ -144,7 +147,7 @@ fn run_ais_session(conn: &DbConnection, logger: &mut AisFileLogger) -> Result<()
     let auth_message = serde_json::to_string(&auth_request)?;
     socket.send(tungstenite::Message::Binary(auth_request_bytes))?;
 
-    println!("Successfully authenticated: {}",auth_message);
+    println!("Authentication sent: {}",auth_message);
     let mut message_count = 0;
     loop {
         let message = match socket.read() {

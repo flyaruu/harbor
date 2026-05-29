@@ -14,7 +14,7 @@ services:
     restart: unless-stopped
 
   tileserver-gl:
-    image: maptiler/tileserver-gl-light:latest
+    image: maptiler/tileserver-gl:v5.5.0
     container_name: tileserver-gl
     command: ["--file", "/data/current.pmtiles"]
     ports:
@@ -45,11 +45,11 @@ services:
     depends_on:
       - spacetimedb
     environment:
-      AISSTREAM_API_KEY: ${AISSTREAM_API_KEY:-replace-with-your-aisstream-api-key}
+      AISSTREAM_API_KEY: ${AISSTREAM_API_KEY}
       NO_CERT_VALIDATION: ${NO_CERT_VALIDATION:-true}
       SPACETIMEDB_HOST: http://spacetimedb:3000
       SPACETIMEDB_DB_NAME: ${SPACETIMEDB_DB_NAME:-ship-spacetime}
-    restart: unless-stopped
+    restart: no
 
 volumes:
   spacetimedb-data:
