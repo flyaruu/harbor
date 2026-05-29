@@ -16,7 +16,7 @@ use crate::module_bindings::{
     GlobalStateTableAccess, LocationReport, LocationReportTableAccess, RemoteModule, Ship,
     ShipTableAccess, set_current_projection_request,
 };
-use crate::ship::{PhysicalShip, ProjectedShip, spawn_projected_ship_pair};
+use crate::ship::{PhysicalShip, ProjectedShip, ShipLodAssets, spawn_projected_ship_pair};
 use crate::ship_class::ShipClass;
 use crate::ui::{
     CurrentTimestamp, TimestampBounds, TimestampUi, advance_timestamp_playback, format_timestamp,
@@ -304,6 +304,7 @@ fn log_subscription_events(
 fn reconcile_projected_ships_from_cache(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
+    lod_assets: Res<ShipLodAssets>,
     projection: Res<TileWorldProjection>,
     water_settings: Res<WaterSettings>,
     map_root: Res<MapRoot>,
@@ -323,6 +324,7 @@ fn reconcile_projected_ships_from_cache(
         sync_projected_ship_entity(
             &mut commands,
             &asset_server,
+            &lod_assets,
             &projection,
             water_settings.height,
             &map_root,
@@ -347,7 +349,6 @@ fn reconcile_projected_ships_from_cache(
             }
         }
     }
-
 }
 
 fn spacetimedb_uri() -> String {
@@ -402,6 +403,7 @@ fn projected_ship_class(connection: Option<&StdbConn>, ship_id: u64) -> ShipClas
 fn sync_projected_ship_entity(
     commands: &mut Commands,
     asset_server: &AssetServer,
+    lod_assets: &ShipLodAssets,
     projection: &TileWorldProjection,
     water_height: f32,
     map_root: &MapRoot,
@@ -454,6 +456,7 @@ fn sync_projected_ship_entity(
     spawn_projected_ship(
         commands,
         asset_server,
+        lod_assets,
         projection,
         water_height,
         map_root,
@@ -470,6 +473,7 @@ fn sync_projected_ship_entity(
 fn spawn_projected_ship(
     commands: &mut Commands,
     asset_server: &AssetServer,
+    lod_assets: &ShipLodAssets,
     projection: &TileWorldProjection,
     water_height: f32,
     map_root: &MapRoot,
@@ -484,6 +488,7 @@ fn spawn_projected_ship(
     let _ = spawn_projected_ship_pair(
         commands,
         asset_server,
+        lod_assets,
         projection,
         water_height,
         map_root,
@@ -531,7 +536,10 @@ fn on_projection_deleted(
     for msg in messages.read() {
         let row = &msg.row;
 
-        if projection_cache.pending_inserts.contains_key(&row.ship_mmsi) {
+        if projection_cache
+            .pending_inserts
+            .contains_key(&row.ship_mmsi)
+        {
             continue;
         }
 
@@ -543,8 +551,8 @@ fn apply_projection_cache_updates(
     mut projection_cache: ResMut<ProjectionCache>,
     mut projection_timing: ResMut<ProjectionRefreshTiming>,
 ) {
-    let had_pending_updates =
-        !projection_cache.pending_inserts.is_empty() || !projection_cache.pending_deletes.is_empty();
+    let had_pending_updates = !projection_cache.pending_inserts.is_empty()
+        || !projection_cache.pending_deletes.is_empty();
 
     if !had_pending_updates {
         return;

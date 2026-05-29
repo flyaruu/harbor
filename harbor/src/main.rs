@@ -3,6 +3,7 @@ use bevy_egui::{EguiPlugin, EguiPrimaryContextPass};
 use bevy_obj::ObjPlugin;
 use bevy_panorbit_wasd_camera::PanOrbitCameraPlugin;
 use bevy_water::WaterSettings;
+use std::time::Duration;
 
 use crate::light::animate_light_direction;
 use crate::perf::PerformancePlugin;
@@ -52,6 +53,7 @@ fn main() {
     .insert_resource(TimestampBounds::default())
     .insert_resource(TimestampPlayback::default())
     .insert_resource(ShipInfoOverlay::default())
+    .insert_resource(ship::ShipLodConfig::default())
     .insert_resource(SelectedShipRoute::default())
     .insert_resource(CurrentTimestamp::default())
     .add_systems(
@@ -59,6 +61,7 @@ fn main() {
         (
             map::setup_map_tile_materials,
             map::setup_map_tiles,
+            ship::setup_ship_lod_assets,
             static_landmarks::bridge::spawn_bridge,
             demo::spawn_demo_ships,
             camera::setup_camera,
@@ -69,16 +72,28 @@ fn main() {
     .add_systems(EguiPrimaryContextPass, timestamp_ui)
     .add_systems(
         Update,
+        ui::advance_timestamp_playback.run_if(bevy::time::common_conditions::on_timer(
+            Duration::from_millis(100),
+        )),
+    )
+    .add_systems(
+        Update,
         (
             animate_light_direction,
             camera::log_camera_pose_every_five_seconds,
             demo::toggle_demo_ships,
             map::spawn_map_tile_batch,
-            ship::smooth_physical_ships,
-            ship::sync_physical_ship_classes,
-            ship::sync_ship_footprints_from_db,
-            ship::sync_ship_scene_placements,
-            ship::sync_ships_to_map,
+            (
+                ship::smooth_physical_ships,
+                ship::sync_physical_ship_classes,
+                ship::sync_ship_footprints_from_db,
+                ship::sync_ship_scene_placements,
+                ship::sync_ship_footprint_visuals,
+                ship::sync_ships_to_map,
+                ship::update_ship_lod_from_camera,
+                ship::apply_ship_lod_visibility,
+            )
+                .chain(),
             wave_rocking::apply_wave_rocking,
             ship::select_ship_on_click,
             ship::sync_selected_ship_info,

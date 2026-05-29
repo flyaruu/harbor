@@ -2,7 +2,7 @@ use bevy::prelude::*;
 use bevy_water::WaterSettings;
 
 use crate::map::{MapRoot, TileWorldProjection};
-use crate::ship::{PhysicalShip, Ship, spawn_ship_scene_entity};
+use crate::ship::{PhysicalShip, Ship, ShipLodAssets, spawn_ship_scene_entity};
 use crate::ship_class::ShipClass;
 
 const SHIP_LATITUDE: f64 = 51.9060;
@@ -20,6 +20,7 @@ pub struct DemoShipsVisible(pub bool);
 pub fn spawn_demo_ships(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
+    lod_assets: Res<ShipLodAssets>,
     projection: Res<TileWorldProjection>,
     map_root: Res<MapRoot>,
     water_settings: Res<WaterSettings>,
@@ -49,6 +50,7 @@ pub fn spawn_demo_ships(
         let root = spawn_ship_scene_entity(
             &mut commands,
             &asset_server,
+            &lod_assets,
             &projection,
             water_settings.height,
             &map_root,
@@ -61,7 +63,12 @@ pub fn spawn_demo_ships(
                 sog: None,
                 heading: 0.0,
             },
-            Some(new_demo_physical_ship(ship_id, Entity::PLACEHOLDER)),
+            Some(new_demo_physical_ship(
+                ship_id,
+                Entity::PLACEHOLDER,
+                base_lat,
+                lon,
+            )),
         );
         commands.entity(root).insert((DemoShip, Visibility::Hidden));
     }
@@ -88,10 +95,17 @@ pub fn toggle_demo_ships(
     }
 }
 
-fn new_demo_physical_ship(ship_id: u64, projected_entity: Entity) -> PhysicalShip {
+fn new_demo_physical_ship(
+    ship_id: u64,
+    projected_entity: Entity,
+    lat: f64,
+    lon: f64,
+) -> PhysicalShip {
     PhysicalShip {
         ship_id,
         projected_entity,
+        lat,
+        lon,
         sync_class_from_db: false,
         roll_phase_offset: (ship_id as f32 * 0.73).rem_euclid(std::f32::consts::TAU),
         pitch_phase_offset: (ship_id as f32 * 1.13).rem_euclid(std::f32::consts::TAU),

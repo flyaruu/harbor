@@ -1,6 +1,7 @@
 use bevy::asset::RenderAssetUsages;
 use bevy::camera::primitives::MeshAabb;
 use bevy::camera::visibility::NoFrustumCulling;
+use bevy::math::primitives::Cuboid;
 use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
 use bevy::scene::{SceneInstanceReady, SceneSpawner};
@@ -11,6 +12,7 @@ use chrono::{DateTime, Utc};
 use spacetimedb_sdk::Table;
 use std::path::Path;
 
+use crate::demo::DemoShip;
 use crate::map::{MapRoot, TileWorldProjection};
 use crate::module_bindings::{
     LocationReport, LocationReportTableAccess, Ship as ShipRecord, ShipTableAccess,
@@ -20,10 +22,13 @@ use crate::spacetime::StdbConn;
 use crate::ui::ShipInfoOverlay;
 
 const SHIP_HEADING: f32 = 0.0;
+const SHIP_POSITION_SMOOTHING_RATE: f32 = 4.0;
 const SHIP_HEADING_SMOOTHING_RATE: f32 = 6.0;
 const SHIP_PICK_RADIUS: f32 = 45.0;
 const SHIP_FOOTPRINT_HEIGHT: f32 = 4.0;
 const SHIP_FOOTPRINT_Y_OFFSET: f32 = -5.5;
+const SHIP_FOOTPRINT_VISUAL_HEIGHT: f32 = 0.9;
+const SHIP_FOOTPRINT_VISUAL_Y_OFFSET: f32 = 0.35;
 const ROUTE_HEIGHT: f32 = 5.0;
 const ROUTE_WIDTH: f32 = 20.0;
 
@@ -54,6 +59,9 @@ pub struct ShipAppearance {
 #[derive(Component)]
 pub struct ShipSceneInstance;
 
+#[derive(Component)]
+pub struct ShipFootprintVisual;
+
 #[derive(Component, Clone, Copy)]
 pub struct ShipFootprint {
     pub translation: Vec3,
@@ -72,6 +80,13 @@ pub struct ShipModelBounds {
     pub max: Vec3,
 }
 
+#[derive(Component, Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ShipLodLevel {
+    Hidden,
+    Footprint,
+    DetailedModel,
+}
+
 #[derive(Component)]
 pub struct ProjectedShip {
     pub ship_id: u64,
@@ -85,6 +100,8 @@ pub struct ProjectedShip {
 pub struct PhysicalShip {
     pub ship_id: u64,
     pub projected_entity: Entity,
+    pub lat: f64,
+    pub lon: f64,
     pub sync_class_from_db: bool,
     pub roll_phase_offset: f32,
     pub pitch_phase_offset: f32,
@@ -101,9 +118,49 @@ pub struct ShipRouteRoot {
 #[derive(Default, Resource)]
 pub struct SelectedShipRoute(pub Option<Entity>);
 
+#[derive(Resource)]
+pub struct ShipLodConfig {
+    pub footprint_distance: f32,
+    pub hidden_distance: f32,
+}
+
+impl Default for ShipLodConfig {
+    fn default() -> Self {
+        Self {
+            footprint_distance: 3800.0,
+            hidden_distance: 15000.0,
+        }
+    }
+}
+
+#[derive(Resource, Clone)]
+pub struct ShipLodAssets {
+    footprint_mesh: Handle<Mesh>,
+    footprint_material: Handle<StandardMaterial>,
+}
+
+pub fn setup_ship_lod_assets(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    commands.insert_resource(ShipLodAssets {
+        footprint_mesh: meshes.add(Mesh::from(Cuboid::new(1.0, 2.0, 1.0))),
+        footprint_material: materials.add(StandardMaterial {
+            base_color: Color::srgba(0.43, 0.35, 0.19, 0.9),
+            emissive: LinearRgba::rgb(0.04, 0.03, 0.01),
+            alpha_mode: AlphaMode::Blend,
+            perceptual_roughness: 0.96,
+            metallic: 0.0,
+            ..default()
+        }),
+    });
+}
+
 pub fn spawn_projected_ship_pair(
     commands: &mut Commands,
     asset_server: &AssetServer,
+    lod_assets: &ShipLodAssets,
     projection: &TileWorldProjection,
     water_height: f32,
     map_root: &MapRoot,
@@ -137,32 +194,121 @@ pub fn spawn_projected_ship_pair(
     let physical_entity = spawn_ship_scene_entity(
         commands,
         asset_server,
+        lod_assets,
         projection,
         water_height,
         map_root,
         name,
         class,
         projected_ship,
-        Some(new_physical_ship(ship_id, projected_entity)),
+        Some(new_physical_ship(ship_id, projected_entity, lat, lon)),
     );
 
     (projected_entity, physical_entity)
 }
 
+pub fn sync_ship_footprint_visuals(
+    root_ships: Query<(&Children, Option<&ShipFootprint>), With<ShipSceneRoot>>,
+    mut footprint_visuals: Query<&mut Transform, With<ShipFootprintVisual>>,
+) {
+    for (children, footprint) in &root_ships {
+        for child in children.iter() {
+            let Ok(mut transform) = footprint_visuals.get_mut(child) else {
+                continue;
+            };
+
+            let Some(footprint) = footprint else {
+                transform.translation = Vec3::new(
+                    0.0,
+                    SHIP_FOOTPRINT_VISUAL_Y_OFFSET + SHIP_FOOTPRINT_VISUAL_HEIGHT * 0.5,
+                    0.0,
+                );
+                transform.scale = Vec3::new(1.0, SHIP_FOOTPRINT_VISUAL_HEIGHT, 1.0);
+                continue;
+            };
+
+            transform.translation = Vec3::new(
+                footprint.translation.x,
+                SHIP_FOOTPRINT_VISUAL_Y_OFFSET + SHIP_FOOTPRINT_VISUAL_HEIGHT * 0.5,
+                footprint.translation.z,
+            );
+            transform.scale = Vec3::new(
+                footprint.scale.x,
+                SHIP_FOOTPRINT_VISUAL_HEIGHT,
+                footprint.scale.z,
+            );
+        }
+    }
+}
+
+pub fn update_ship_lod_from_camera(
+    camera: Single<&GlobalTransform, With<Camera3d>>,
+    lod_config: Res<ShipLodConfig>,
+    mut ships: Query<
+        (&GlobalTransform, Option<&ShipFootprint>, &mut ShipLodLevel),
+        (With<ShipSceneRoot>, Without<DemoShip>),
+    >,
+) {
+    let camera_translation = camera.translation();
+
+    for (ship_transform, footprint, mut lod_level) in &mut ships {
+        let distance = camera_translation.distance(ship_transform.translation());
+        let next = next_ship_lod(footprint.is_some(), distance, &lod_config);
+
+        if *lod_level != next {
+            *lod_level = next;
+        }
+    }
+}
+
+pub fn apply_ship_lod_visibility(
+    root_ships: Query<(&Children, &ShipLodLevel), (With<ShipSceneRoot>, Without<DemoShip>)>,
+    mut model_visuals: Query<
+        &mut Visibility,
+        (With<ShipSceneInstance>, Without<ShipFootprintVisual>),
+    >,
+    mut footprint_visuals: Query<
+        &mut Visibility,
+        (With<ShipFootprintVisual>, Without<ShipSceneInstance>),
+    >,
+) {
+    for (children, lod_level) in &root_ships {
+        for child in children.iter() {
+            if let Ok(mut visibility) = model_visuals.get_mut(child) {
+                *visibility = match lod_level {
+                    ShipLodLevel::DetailedModel => Visibility::Visible,
+                    ShipLodLevel::Footprint | ShipLodLevel::Hidden => Visibility::Hidden,
+                };
+            }
+
+            if let Ok(mut visibility) = footprint_visuals.get_mut(child) {
+                *visibility = match lod_level {
+                    ShipLodLevel::Footprint => Visibility::Visible,
+                    ShipLodLevel::DetailedModel | ShipLodLevel::Hidden => Visibility::Hidden,
+                };
+            }
+        }
+    }
+}
+
 pub fn smooth_physical_ships(
     time: Res<Time>,
     projected_ships: Query<&ProjectedShip>,
-    mut physical_ships: Query<(&PhysicalShip, &mut Ship), Without<ProjectedShip>>,
+    mut physical_ships: Query<(&mut PhysicalShip, &mut Ship), Without<ProjectedShip>>,
 ) {
+    let position_alpha = smoothing_alpha_f64(SHIP_POSITION_SMOOTHING_RATE, time.delta_secs_f64());
     let heading_alpha = smoothing_alpha_f32(SHIP_HEADING_SMOOTHING_RATE, time.delta_secs());
 
-    for (physical_ship, mut ship) in &mut physical_ships {
+    for (mut physical_ship, mut ship) in &mut physical_ships {
         let Ok(projected_ship) = projected_ships.get(physical_ship.projected_entity) else {
             continue;
         };
 
-        ship.lat = projected_ship.lat;
-        ship.lon = projected_ship.lon;
+        physical_ship.lat = lerp_f64(physical_ship.lat, projected_ship.lat, position_alpha);
+        physical_ship.lon = lerp_f64(physical_ship.lon, projected_ship.lon, position_alpha);
+
+        ship.lat = physical_ship.lat;
+        ship.lon = physical_ship.lon;
         ship.sog = projected_ship.sog;
         ship.cog = projected_ship.cog;
         ship.heading = lerp_angle(
@@ -331,7 +477,17 @@ pub fn select_ship_on_click(
     egui_wants_input: Res<EguiWantsInput>,
     window: Single<&Window, With<PrimaryWindow>>,
     camera: Single<(&Camera, &GlobalTransform), With<Camera3d>>,
-    ships: Query<(&Ship, &Transform, Option<&PhysicalShip>, &Name), With<ShipSceneRoot>>,
+    ships: Query<
+        (
+            &Ship,
+            &Transform,
+            Option<&PhysicalShip>,
+            &Name,
+            &ShipLodLevel,
+            &Visibility,
+        ),
+        With<ShipSceneRoot>,
+    >,
     connection: Option<Res<StdbConn>>,
     projection: Res<TileWorldProjection>,
     map_root: Res<MapRoot>,
@@ -356,7 +512,11 @@ pub fn select_ship_on_click(
     let ray_direction = ray.direction.as_vec3();
     let mut closest_hit = None;
 
-    for (ship, transform, physical_ship, name) in &ships {
+    for (ship, transform, physical_ship, name, lod_level, visibility) in &ships {
+        if *lod_level == ShipLodLevel::Hidden || *visibility == Visibility::Hidden {
+            continue;
+        }
+
         let distance = ray_sphere_hit_distance(
             ray_origin,
             ray_direction,
@@ -418,9 +578,9 @@ pub fn select_ship_on_click(
             ship_info.dimension_d = ship_row.dimension_d;
         }
 
-        ship_info.last_location_report_timestamp = connection
-            .as_deref()
-            .and_then(|connection| latest_ship_location_report_timestamp(connection, physical_ship.ship_id));
+        ship_info.last_location_report_timestamp = connection.as_deref().and_then(|connection| {
+            latest_ship_location_report_timestamp(connection, physical_ship.ship_id)
+        });
 
         if let Some(connection) = connection.as_deref() {
             spawn_selected_ship_route(
@@ -754,10 +914,12 @@ pub fn configure_spawned_ship_scene(
     }
 }
 
-fn new_physical_ship(ship_id: u64, projected_entity: Entity) -> PhysicalShip {
+fn new_physical_ship(ship_id: u64, projected_entity: Entity, lat: f64, lon: f64) -> PhysicalShip {
     PhysicalShip {
         ship_id,
         projected_entity,
+        lat,
+        lon,
         sync_class_from_db: true,
         roll_phase_offset: (ship_id as f32 * 0.73).rem_euclid(std::f32::consts::TAU),
         pitch_phase_offset: (ship_id as f32 * 1.13).rem_euclid(std::f32::consts::TAU),
@@ -800,6 +962,7 @@ fn spawn_projected_ship_entity(
 pub(crate) fn spawn_ship_scene_entity(
     commands: &mut Commands,
     asset_server: &AssetServer,
+    lod_assets: &ShipLodAssets,
     projection: &TileWorldProjection,
     water_height: f32,
     map_root: &MapRoot,
@@ -816,6 +979,7 @@ pub(crate) fn spawn_ship_scene_entity(
         .spawn((
             Name::new(name.to_owned()),
             ship,
+            ShipLodLevel::DetailedModel,
             ShipAppearance { class },
             ShipSceneRoot,
             ChildOf(map_root.0),
@@ -828,6 +992,7 @@ pub(crate) fn spawn_ship_scene_entity(
         .id();
 
     spawn_ship_scene_instance_entity(commands, asset_server, root_entity, name, class);
+    spawn_ship_footprint_visual_entity(commands, lod_assets, root_entity, name);
 
     if let Some(physical_ship) = physical_ship {
         commands.entity(root_entity).insert(physical_ship);
@@ -916,8 +1081,60 @@ fn spawn_ship_scene_instance_entity_in_world(
         .id()
 }
 
+fn spawn_ship_footprint_visual_entity(
+    commands: &mut Commands,
+    lod_assets: &ShipLodAssets,
+    parent_entity: Entity,
+    name: &str,
+) -> Entity {
+    commands
+        .spawn((
+            Name::new(format!("{name} Footprint")),
+            ShipFootprintVisual,
+            Mesh3d(lod_assets.footprint_mesh.clone()),
+            MeshMaterial3d(lod_assets.footprint_material.clone()),
+            ChildOf(parent_entity),
+            Transform::from_translation(Vec3::new(
+                0.0,
+                SHIP_FOOTPRINT_VISUAL_Y_OFFSET + SHIP_FOOTPRINT_VISUAL_HEIGHT * 0.5,
+                0.0,
+            ))
+            .with_scale(Vec3::new(1.0, SHIP_FOOTPRINT_VISUAL_HEIGHT, 1.0)),
+            GlobalTransform::default(),
+            Visibility::Hidden,
+            InheritedVisibility::default(),
+        ))
+        .id()
+}
+
+fn next_ship_lod(has_footprint: bool, distance: f32, config: &ShipLodConfig) -> ShipLodLevel {
+    if !has_footprint {
+        return if distance >= config.hidden_distance {
+            ShipLodLevel::Hidden
+        } else {
+            ShipLodLevel::DetailedModel
+        };
+    }
+
+    if distance >= config.hidden_distance {
+        ShipLodLevel::Hidden
+    } else if distance >= config.footprint_distance {
+        ShipLodLevel::Footprint
+    } else {
+        ShipLodLevel::DetailedModel
+    }
+}
+
 fn smoothing_alpha_f32(rate: f32, delta_seconds: f32) -> f32 {
     1.0 - (-rate * delta_seconds).exp()
+}
+
+fn smoothing_alpha_f64(rate: f32, delta_seconds: f64) -> f64 {
+    1.0 - f64::exp(-(rate as f64) * delta_seconds)
+}
+
+fn lerp_f64(current: f64, target: f64, alpha: f64) -> f64 {
+    current + (target - current) * alpha
 }
 
 fn lerp_angle(current: f32, target: f32, alpha: f32) -> f32 {

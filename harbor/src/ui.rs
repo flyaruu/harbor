@@ -4,6 +4,10 @@ use chrono::{DateTime, SecondsFormat, Utc};
 
 use crate::module_bindings::MajorAisShipType;
 
+const PLAYBACK_RATE_NORMAL: f32 = 1.0;
+const PLAYBACK_RATE_FAST: f32 = 10.0;
+const PLAYBACK_RATE_VERY_FAST: f32 = 100.0;
+
 #[derive(Default, Resource)]
 pub struct TimestampUi {
     pub value: String,
@@ -117,17 +121,17 @@ pub fn timestamp_ui(
                 ui.horizontal(|ui| {
                     if ui.button("Play").clicked() {
                         timestamp.is_editing = false;
-                        playback.rate = 1.0;
+                        playback.rate = PLAYBACK_RATE_NORMAL;
                     }
 
                     if ui.button("10x").clicked() {
                         timestamp.is_editing = false;
-                        playback.rate = 10.0;
+                        playback.rate = PLAYBACK_RATE_FAST;
                     }
 
                     if ui.button("100x").clicked() {
                         timestamp.is_editing = false;
-                        playback.rate = 100.0;
+                        playback.rate = PLAYBACK_RATE_VERY_FAST;
                     }
 
                     if ui.button("Stop").clicked() {
@@ -267,8 +271,21 @@ pub fn advance_timestamp_playback(
     mut playback: ResMut<TimestampPlayback>,
     mut timestamp_ui: ResMut<TimestampUi>,
     mut current_timestamp: ResMut<CurrentTimestamp>,
+    mut last_step_elapsed_seconds: Local<Option<f64>>,
 ) {
     if playback.rate <= 0.0 {
+        *last_step_elapsed_seconds = Some(time.elapsed_secs_f64());
+        return;
+    }
+
+    let now = time.elapsed_secs_f64();
+    let Some(previous) = last_step_elapsed_seconds.replace(now) else {
+        return;
+    };
+
+    let elapsed_seconds = (now - previous).max(0.0) as f32;
+
+    if elapsed_seconds <= f32::EPSILON {
         return;
     }
 
@@ -280,7 +297,7 @@ pub fn advance_timestamp_playback(
     };
 
     let delta = chrono::TimeDelta::from_std(std::time::Duration::from_secs_f32(
-        time.delta_secs() * playback.rate,
+        elapsed_seconds * playback.rate,
     ))
     .expect("positive playback delta should convert to chrono duration");
     let mut next = current + delta;
@@ -351,7 +368,9 @@ fn format_optional_f64(value: Option<f64>, unit: &str) -> String {
 }
 
 fn format_optional_timestamp(value: Option<DateTime<Utc>>) -> String {
-    value.map(format_timestamp).unwrap_or_else(|| "-".to_owned())
+    value
+        .map(format_timestamp)
+        .unwrap_or_else(|| "-".to_owned())
 }
 
 fn format_ais_dimensions(ship_info: &ShipInfoOverlay) -> String {
