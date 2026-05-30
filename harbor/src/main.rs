@@ -1,3 +1,4 @@
+use bevy::asset::{AssetMetaCheck, AssetPlugin};
 use bevy::prelude::*;
 use bevy_egui::{EguiPlugin, EguiPrimaryContextPass};
 use bevy_obj::ObjPlugin;
@@ -35,14 +36,21 @@ fn main() {
     let mut app = App::new();
     map::configure_tile_asset_source(&mut app);
 
-    app.add_plugins(DefaultPlugins.set(WindowPlugin {
-        primary_window: Some(Window {
-            title: "Harbor".into(),
-            present_mode: bevy::window::PresentMode::AutoVsync,
-            ..default()
-        }),
-        ..default()
-    }))
+    app.add_plugins(
+        DefaultPlugins
+            .set(AssetPlugin {
+                meta_check: AssetMetaCheck::Never,
+                ..default()
+            })
+            .set(WindowPlugin {
+                primary_window: Some(Window {
+                    title: "Harbor".into(),
+                    present_mode: bevy::window::PresentMode::AutoVsync,
+                    ..default()
+                }),
+                ..default()
+            }),
+    )
     .add_plugins(ObjPlugin)
     .add_plugins(EguiPlugin::default())
     .add_plugins(PerformancePlugin)

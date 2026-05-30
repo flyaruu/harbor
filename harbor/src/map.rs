@@ -35,7 +35,7 @@ const MAX_CONCURRENT_TILE_DOWNLOADS: usize = 16;
 const MAX_CONCURRENT_TILE_SCENE_LOADS: usize = 4;
 const TILE_ANCHOR_LATITUDE: f64 = 51.90189;
 const TILE_ANCHOR_LONGITUDE: f64 = 4.49171;
-const DEFAULT_TILE_LOAD_RADIUS: i32 = 8;
+const DEFAULT_TILE_LOAD_RADIUS: i32 = 5;
 const TILE_CACHE_ASSET_SOURCE: &str = "tile_cache";
 const DEFAULT_TILE_SERVER_URI: &str = "http://localhost:8081";
 
@@ -47,7 +47,9 @@ pub(crate) struct TileMaterialPalette {
     #[cfg(not(target_arch = "wasm32"))]
     water: Handle<StandardWaterMaterial>,
     #[cfg(target_arch = "wasm32")]
-    water: Handle<StandardMaterial>,
+    water_surface: Handle<StandardMaterial>,
+    #[cfg(target_arch = "wasm32")]
+    water_volume: Handle<StandardMaterial>,
 }
 
 impl TileMaterialPalette {
@@ -70,6 +72,11 @@ impl TileMaterialPalette {
     }
 
     fn is_water(&self, label: &str) -> bool {
+        label.to_ascii_lowercase().starts_with("water_")
+    }
+
+    #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+    fn is_water_surface(&self, label: &str) -> bool {
         label.eq_ignore_ascii_case("water_surface")
     }
 }
@@ -222,7 +229,7 @@ pub fn setup_map_tile_materials(
 pub fn setup_map_tile_materials(
     mut commands: Commands,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    water_settings: Res<WaterSettings>,
+    _water_settings: Res<WaterSettings>,
 ) {
     commands.insert_resource(TileMaterialPalette {
         building_roof: materials.add(StandardMaterial {
@@ -246,11 +253,25 @@ pub fn setup_map_tile_materials(
             reflectance: 0.18,
             ..default()
         }),
-        water: materials.add(StandardMaterial {
-            base_color: water_settings.shallow_color,
-            perceptual_roughness: 0.22,
+        water_surface: materials.add(StandardMaterial {
+            // Keep the wasm fallback intentionally simple and stable.
+            base_color: Color::srgb(0.08, 0.32, 0.66),
+            alpha_mode: AlphaMode::Blend,
+            emissive: LinearRgba::rgb(0.02, 0.08, 0.16),
+            perceptual_roughness: 1.0,
             metallic: 0.0,
-            reflectance: 0.18,
+            reflectance: 0.0,
+            unlit: true,
+            ..default()
+        }),
+        water_volume: materials.add(StandardMaterial {
+            base_color: Color::srgb(0.03, 0.14, 0.28),
+            emissive: LinearRgba::rgb(0.01, 0.03, 0.06),
+            perceptual_roughness: 1.0,
+            metallic: 0.0,
+            reflectance: 0.0,
+            unlit: true,
+            cull_mode: None,
             ..default()
         }),
     });
@@ -524,7 +545,15 @@ pub fn remap_map_tile_materials(
             #[cfg(target_arch = "wasm32")]
             commands
                 .entity(entity)
-                .insert(MeshMaterial3d::<StandardMaterial>(palette.water.clone()));
+                .insert(MeshMaterial3d::<StandardMaterial>(
+                    if material_name.is_some_and(|label| palette.is_water_surface(label))
+                        || entity_name.is_some_and(|label| palette.is_water_surface(label))
+                    {
+                        palette.water_surface.clone()
+                    } else {
+                        palette.water_volume.clone()
+                    },
+                ));
             continue;
         }
 
@@ -556,6 +585,7 @@ fn ensure_water_uvs(mesh: &mut Mesh, global_transform: &GlobalTransform) {
         })
         .collect::<Vec<_>>();
 
+    mesh.remove_attribute(Mesh::ATTRIBUTE_COLOR);
     mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
 }
 
