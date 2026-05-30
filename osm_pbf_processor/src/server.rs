@@ -62,7 +62,9 @@ fn handle_request(request: Request, config: &AppConfig) -> Result<()> {
         }
     };
 
-    let response = Response::from_data(glb).with_header(content_type_header()?);
+    let response = Response::from_data(glb)
+        .with_header(content_type_header()?)
+        .with_header(cors_allow_origin_header()?);
     request
         .respond(response)
         .context("failed to write HTTP response")
@@ -71,7 +73,8 @@ fn handle_request(request: Request, config: &AppConfig) -> Result<()> {
 fn respond_plain(request: Request, status: StatusCode, body: &str) -> Result<()> {
     let response = Response::from_string(body.to_string())
         .with_status_code(status)
-        .with_header(text_content_type_header()?);
+        .with_header(text_content_type_header()?)
+        .with_header(cors_allow_origin_header()?);
     request
         .respond(response)
         .context("failed to write HTTP response")
@@ -85,6 +88,11 @@ fn content_type_header() -> Result<Header> {
 fn text_content_type_header() -> Result<Header> {
     Header::from_bytes(&b"Content-Type"[..], &b"text/plain; charset=utf-8"[..])
         .map_err(|_| anyhow::anyhow!("failed to build text content type header"))
+}
+
+fn cors_allow_origin_header() -> Result<Header> {
+    Header::from_bytes(&b"Access-Control-Allow-Origin"[..], &b"*"[..])
+        .map_err(|_| anyhow::anyhow!("failed to build CORS header"))
 }
 
 fn parse_tile_route(url: &str) -> Option<TileRoute> {

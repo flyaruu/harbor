@@ -5,7 +5,7 @@ bind = "0.0.0.0"
 port = 8081
 backend = "http://tileserver-gl:8080"
 [conversion.simplify]
-enabled = true
+enabled = false 
 tolerance = 8.0
 
 [conversion.land]

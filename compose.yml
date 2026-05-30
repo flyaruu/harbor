@@ -51,5 +51,17 @@ services:
       SPACETIMEDB_DB_NAME: ${SPACETIMEDB_DB_NAME:-ship-spacetime}
     restart: no
 
+  harbor-wasm:
+    build:
+      context: .
+      dockerfile: harbor/Dockerfile
+    container_name: harbor-wasm
+    depends_on:
+      - spacetimedb
+      - osm_pbf_processor
+    ports:
+      - "1334:1334"
+    restart: unless-stopped
+
 volumes:
   spacetimedb-data:

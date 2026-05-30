@@ -6,10 +6,7 @@ resolver = "2"
 [workspace.dependencies]
 anyhow = "1.0.102"
 serde = { version = "1.0.228", features = ["derive"] }
-spacetimedb-sdk = { version = "2.2.*" }
-
-[patch.crates-io]
-bevy_stdb = { path = "harbor/vendor/bevy_stdb" }
+spacetimedb-sdk = { version = "2.3.*" }
 
 [profile.dev]
 opt-level = 1

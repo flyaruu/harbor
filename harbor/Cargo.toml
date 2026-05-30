@@ -11,7 +11,7 @@ chrome_trace = ["bevy/trace_chrome"]
 bevy = { version = "0.18.1", features = ["default", "bevy_text", "bevy_gltf", "bevy_pbr", "shader_format_glsl", "tga"] }
 bevy_obj = "0.18.2"
 bevy_egui = "0.39.1"
-bevy_stdb = "0.8.1"
+bevy_stdb = "0.8.2"
 chrono = { version = "0.4.42", default-features = false, features = ["alloc", "std"] }
 spacetimedb-sdk.workspace = true
 
@@ -20,7 +20,7 @@ bevy_panorbit_wasd_camera = { version = "0.34.0", features = ["bevy_egui"] }
 bevy_water = "0.18.1"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-bevy_stdb = { version = "0.8.1", features = ["browser"] }
+bevy_stdb = { version = "0.8.2", features = ["browser"] }
 spacetimedb-sdk = { workspace = true, features = ["browser"] }
 console_error_panic_hook = "0.1.7"
 web-sys = { version = "0.3.98", features = ["Window", "Location", "UrlSearchParams"] }

@@ -1,4 +1,9 @@
 .git
 target
+**/target
 data
-.cache/harbor_tiles
+.cache
+node_modules
+trace-*.json
+*.glb
+*.zip

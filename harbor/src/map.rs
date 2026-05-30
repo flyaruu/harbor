@@ -35,7 +35,7 @@ const MAX_CONCURRENT_TILE_DOWNLOADS: usize = 16;
 const MAX_CONCURRENT_TILE_SCENE_LOADS: usize = 4;
 const TILE_ANCHOR_LATITUDE: f64 = 51.90189;
 const TILE_ANCHOR_LONGITUDE: f64 = 4.49171;
-const DEFAULT_TILE_LOAD_RADIUS: i32 = 12;
+const DEFAULT_TILE_LOAD_RADIUS: i32 = 8;
 const TILE_CACHE_ASSET_SOURCE: &str = "tile_cache";
 const DEFAULT_TILE_SERVER_URI: &str = "http://localhost:8081";
 
@@ -795,7 +795,7 @@ mod tests {
         );
         let focus = projection.lat_lon_to_world(51.90189, 4.49171);
 
-        let desired = desired_tiles_for_focus(&projection, focus);
+        let desired = desired_tiles_for_focus(&projection, focus, DEFAULT_TILE_LOAD_RADIUS);
 
         assert!(!desired.is_empty());
         assert!(desired.contains(&TileKey {
