@@ -3,12 +3,30 @@
 # SPACETIMEDB_DB_NAME=replace-with-your-spacetimedb-db-name
 
 services:
+  proxy:
+    image: traefik:v3.1
+    container_name: proxy
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.web.address=:80
+    ports:
+      - "80:80"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    restart: unless-stopped
+
   spacetimedb:
     image: clockworklabs/spacetime
     container_name: spacetimedb
     command: start
-    ports:
-      - "3000:3000"
+    expose:
+      - "3000"
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.spacetimedb.rule=Host(`spacetimedb.codemonkey.nl`)
+      - traefik.http.routers.spacetimedb.entrypoints=web
+      - traefik.http.services.spacetimedb.loadbalancer.server.port=3000
     volumes:
       - spacetimedb-data:/root/.local/share/spacetime/data
     restart: unless-stopped
@@ -16,11 +34,16 @@ services:
   tileserver-gl:
     image: maptiler/tileserver-gl:v5.5.0
     container_name: tileserver-gl
-    command: ["--file", "/data/current.pmtiles"]
-    ports:
-      - "8080:8080"
+    command: ["--file", "/map_data/current.pmtiles"]
+    expose:
+      - "8080"
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.tileserver-gl.rule=Host(`tileserver-gl.codemonkey.nl`)
+      - traefik.http.routers.tileserver-gl.entrypoints=web
+      - traefik.http.services.tileserver-gl.loadbalancer.server.port=8080
     volumes:
-      - ./data:/data
+      - ./map_data:/map_data
     restart: unless-stopped
 
   osm_pbf_processor:
@@ -31,10 +54,16 @@ services:
     command: ["./osm_pbf_processor", "--config", "/app/osm_pbf_processor.toml", "--server"]
     depends_on:
       - tileserver-gl
-    ports:
-      - "8081:8081"
+    expose:
+      - "8081"
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.osm-pbf-processor.rule=Host(`osm-pbf-processor.codemonkey.nl`)
+      - traefik.http.routers.osm-pbf-processor.entrypoints=web
+      - traefik.http.services.osm-pbf-processor.loadbalancer.server.port=8081
     volumes:
       - ./osm_pbf_processor/osm_pbf_processor.compose.toml:/app/osm_pbf_processor.toml:ro
+      - ./.cache:/.cache
     restart: unless-stopped
 
   location-source:
@@ -59,8 +88,13 @@ services:
     depends_on:
       - spacetimedb
       - osm_pbf_processor
-    ports:
-      - "1334:1334"
+    expose:
+      - "1334"
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.harbor-wasm.rule=Host(`harbor-wasm.codemonkey.nl`)
+      - traefik.http.routers.harbor-wasm.entrypoints=web
+      - traefik.http.services.harbor-wasm.loadbalancer.server.port=1334
     restart: unless-stopped
 
 volumes:
