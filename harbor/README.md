@@ -63,14 +63,21 @@ cargo install wasm-server-runner
 cargo run-wasm
 ```
 
-The wasm build reads SpacetimeDB connection settings from the browser URL query string:
+Before opening the page, make sure the GLB tile server is running, for example:
+
+```bash
+docker compose up --build tileserver-gl osm_pbf_processor
+```
+
+The wasm build reads runtime settings from the browser URL query string:
 
 - `spacetimedb_uri`
 - `spacetimedb_module`
 - `spacetimedb_token`
+- `tile_server_uri`
 
 Example:
 
 ```text
-http://127.0.0.1:1334/?spacetimedb_uri=http://localhost:3000&spacetimedb_module=ship-spacetime
+http://127.0.0.1:1334/?spacetimedb_uri=http://localhost:3000&spacetimedb_module=ship-spacetime&tile_server_uri=http://localhost:8081
 ```

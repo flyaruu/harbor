@@ -1,5 +1,4 @@
 use std::collections::VecDeque;
-#[cfg(not(target_arch = "wasm32"))]
 use std::collections::{HashMap, HashSet};
 use std::f64::consts::PI;
 #[cfg(not(target_arch = "wasm32"))]
@@ -11,17 +10,17 @@ use std::path::{Path, PathBuf};
 
 use bevy::asset::AssetApp;
 use bevy::asset::io::AssetSourceBuilder;
-#[cfg(not(target_arch = "wasm32"))]
-use bevy::asset::io::file::FileAssetReader;
+#[cfg(target_arch = "wasm32")]
+use bevy::asset::io::wasm::HttpWasmAssetReader;
 use bevy::gltf::GltfMaterialName;
 use bevy::math::DVec2;
 use bevy::mesh::VertexAttributeValues;
 use bevy::pbr::MeshMaterial3d;
 use bevy::prelude::*;
 use bevy::scene::{SceneInstanceReady, SceneSpawner};
+use bevy_egui::EguiContexts;
 #[cfg(not(target_arch = "wasm32"))]
 use bevy::tasks::{IoTaskPool, Task, block_on, poll_once};
-#[cfg(not(target_arch = "wasm32"))]
 use bevy_panorbit_wasd_camera::PanOrbitCamera;
 use bevy_water::WaterSettings;
 
@@ -32,16 +31,12 @@ use bevy_water::material::{StandardWaterMaterial, WaterMaterial};
 
 const TILE_EXTENT: f32 = 4096.0;
 const TILE_ZOOM_LEVEL: u32 = 14;
-const MAX_CONCURRENT_TILE_LOADS: usize = 16;
+const MAX_CONCURRENT_TILE_DOWNLOADS: usize = 16;
+const MAX_CONCURRENT_TILE_SCENE_LOADS: usize = 4;
 const TILE_ANCHOR_LATITUDE: f64 = 51.90189;
 const TILE_ANCHOR_LONGITUDE: f64 = 4.49171;
-#[cfg(not(target_arch = "wasm32"))]
-const TILE_LOAD_RADIUS_X: i32 = 6;
-#[cfg(not(target_arch = "wasm32"))]
-const TILE_LOAD_RADIUS_Y: i32 = 4;
-#[cfg(not(target_arch = "wasm32"))]
+const DEFAULT_TILE_LOAD_RADIUS: i32 = 12;
 const TILE_CACHE_ASSET_SOURCE: &str = "tile_cache";
-#[cfg(not(target_arch = "wasm32"))]
 const DEFAULT_TILE_SERVER_URI: &str = "http://localhost:8081";
 
 #[derive(Resource, Clone)]
@@ -94,16 +89,16 @@ pub(crate) struct TileLoadQueue {
     pending_downloads: VecDeque<TileAsset>,
     #[cfg(not(target_arch = "wasm32"))]
     inflight_downloads: HashMap<TileKey, Task<Result<TileAsset, String>>>,
-    #[cfg(not(target_arch = "wasm32"))]
     states: HashMap<TileKey, TileLoadState>,
-    #[cfg(not(target_arch = "wasm32"))]
     desired: HashSet<TileKey>,
-    #[cfg(not(target_arch = "wasm32"))]
     active_roots: HashMap<TileKey, Entity>,
 }
 
 #[derive(Resource, Clone, Copy)]
 pub struct MapRoot(pub Entity);
+
+#[derive(Resource, Clone, Copy, Debug)]
+pub struct TileLoadRadius(pub i32);
 
 #[derive(Resource, Clone, Copy, Debug)]
 pub struct TileWorldProjection {
@@ -119,7 +114,7 @@ pub(crate) struct TileKey {
     y: i32,
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum TileLoadState {
     Unrequested,
@@ -281,6 +276,7 @@ pub fn setup_map_tiles(mut commands: Commands) {
 
     commands.insert_resource(projection);
     commands.insert_resource(MapRoot(map_root));
+    commands.insert_resource(TileLoadRadius(DEFAULT_TILE_LOAD_RADIUS));
     commands.insert_resource(TileLoadQueue {
         map_root,
         #[cfg(target_arch = "wasm32")]
@@ -292,23 +288,44 @@ pub fn setup_map_tiles(mut commands: Commands) {
         pending_downloads: VecDeque::new(),
         #[cfg(not(target_arch = "wasm32"))]
         inflight_downloads: HashMap::new(),
-        #[cfg(not(target_arch = "wasm32"))]
         states: HashMap::new(),
-        #[cfg(not(target_arch = "wasm32"))]
         desired: HashSet::new(),
-        #[cfg(not(target_arch = "wasm32"))]
         active_roots: HashMap::new(),
     });
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+pub fn adjust_tile_load_radius(
+    input: Res<ButtonInput<KeyCode>>,
+    mut contexts: EguiContexts,
+    mut tile_load_radius: ResMut<TileLoadRadius>,
+) {
+    let ctx = contexts.ctx_mut().expect("primary egui context");
+    if ctx.wants_keyboard_input() {
+        return;
+    }
+
+    let mut next_radius = tile_load_radius.0;
+    if input.just_pressed(KeyCode::BracketLeft) {
+        next_radius = next_radius.saturating_sub(1);
+    }
+    if input.just_pressed(KeyCode::BracketRight) {
+        next_radius = next_radius.saturating_add(1);
+    }
+
+    if next_radius != tile_load_radius.0 {
+        tile_load_radius.0 = next_radius;
+        info!(tile_load_radius = next_radius, "updated tile load radius");
+    }
+}
+
 pub fn update_desired_map_tiles(
     mut commands: Commands,
     projection: Res<TileWorldProjection>,
     camera: Single<&PanOrbitCamera, With<Camera3d>>,
+    tile_load_radius: Res<TileLoadRadius>,
     mut queue: ResMut<TileLoadQueue>,
 ) {
-    let desired = desired_tiles_for_focus(&projection, camera.focus);
+    let desired = desired_tiles_for_focus(&projection, camera.focus, tile_load_radius.0);
 
     let to_unload = queue
         .active_roots
@@ -333,7 +350,15 @@ pub fn update_desired_map_tiles(
             .unwrap_or(TileLoadState::Unrequested);
         match state {
             TileLoadState::Unrequested => {
+                #[cfg(target_arch = "wasm32")]
+                {
+                    queue.ready.push_back(tile);
+                    queue.states.insert(key, TileLoadState::SceneQueued);
+                }
+
+                #[cfg(not(target_arch = "wasm32"))]
                 queue.pending_downloads.push_back(tile);
+                #[cfg(not(target_arch = "wasm32"))]
                 queue.states.insert(key, TileLoadState::Queued);
             }
             TileLoadState::Cached if !queue.active_roots.contains_key(&key) => {
@@ -359,7 +384,7 @@ pub fn update_desired_map_tiles(
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn download_map_tile_batch(mut queue: ResMut<TileLoadQueue>) {
-    while queue.inflight_downloads.len() < MAX_CONCURRENT_TILE_LOADS {
+    while queue.inflight_downloads.len() < MAX_CONCURRENT_TILE_DOWNLOADS {
         let Some(tile) = queue.pending_downloads.pop_front() else {
             break;
         };
@@ -410,20 +435,18 @@ pub fn spawn_map_tile_batch(
     asset_server: Res<AssetServer>,
     mut queue: ResMut<TileLoadQueue>,
 ) {
-    while queue.inflight_scene_loads < MAX_CONCURRENT_TILE_LOADS {
+    while queue.inflight_scene_loads < MAX_CONCURRENT_TILE_SCENE_LOADS {
         let Some(tile) = queue.ready.pop_front() else {
             break;
         };
 
         let key = tile.key();
-        #[cfg(not(target_arch = "wasm32"))]
         if !queue.desired.contains(&key) || queue.active_roots.contains_key(&key) {
             queue.states.insert(key, TileLoadState::Cached);
             continue;
         }
 
         queue.inflight_scene_loads += 1;
-        #[cfg(not(target_arch = "wasm32"))]
         queue.states.insert(key, TileLoadState::LoadingScene);
         let root = commands
             .spawn((
@@ -437,7 +460,6 @@ pub fn spawn_map_tile_batch(
                 Transform::from_translation(tile.translation),
             ))
             .id();
-        #[cfg(not(target_arch = "wasm32"))]
         queue.active_roots.insert(key, root);
     }
 }
@@ -466,7 +488,6 @@ pub fn remap_map_tile_materials(
     if let Ok(pending) = pending_tile_loads.get(root) {
         commands.entity(root).remove::<PendingTileLoad>();
         queue.inflight_scene_loads = queue.inflight_scene_loads.saturating_sub(1);
-        #[cfg(not(target_arch = "wasm32"))]
         if queue.desired.contains(&pending.0) {
             queue.states.insert(pending.0, TileLoadState::Loaded);
         } else {
@@ -571,15 +592,18 @@ fn tile_asset_for_key(projection: TileWorldProjection, key: TileKey) -> TileAsse
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-fn desired_tiles_for_focus(projection: &TileWorldProjection, focus: Vec3) -> HashSet<TileKey> {
+fn desired_tiles_for_focus(
+    projection: &TileWorldProjection,
+    focus: Vec3,
+    tile_load_radius: i32,
+) -> HashSet<TileKey> {
     let center = projection.world_to_tile(focus);
     let center_x = center.x.floor() as i32;
     let center_y = center.y.floor() as i32;
     let mut desired = HashSet::new();
 
-    for x in (center_x - TILE_LOAD_RADIUS_X)..=(center_x + TILE_LOAD_RADIUS_X) {
-        for y in (center_y - TILE_LOAD_RADIUS_Y)..=(center_y + TILE_LOAD_RADIUS_Y) {
+    for x in (center_x - tile_load_radius)..=(center_x + tile_load_radius) {
+        for y in (center_y - tile_load_radius)..=(center_y + tile_load_radius) {
             desired.insert(TileKey {
                 zoom_level: projection.zoom_level,
                 x,
@@ -599,7 +623,7 @@ fn tile_asset_path(zoom_level: u32, x: i32, y: i32) -> String {
 
     #[cfg(target_arch = "wasm32")]
     {
-        format!("tiles/{zoom_level}/{x}_{y}.glb")
+        format!("{TILE_CACHE_ASSET_SOURCE}://{zoom_level}/{x}/{y}.glb")
     }
 }
 
@@ -607,14 +631,23 @@ pub fn configure_tile_asset_source(app: &mut App) {
     #[cfg(not(target_arch = "wasm32"))]
     {
         let cache_root = tile_cache_root();
-        let asset_root = cache_root.clone();
-        app.register_asset_source(
-            TILE_CACHE_ASSET_SOURCE,
-            AssetSourceBuilder::new(move || Box::new(FileAssetReader::new(asset_root.clone()))),
-        );
         if let Err(error) = fs::create_dir_all(&cache_root) {
             warn!(path = %cache_root.display(), "failed to create tile cache directory: {error}");
         }
+        let asset_root = cache_root.to_string_lossy().into_owned();
+        app.register_asset_source(
+            TILE_CACHE_ASSET_SOURCE,
+            AssetSourceBuilder::platform_default(&asset_root, None),
+        );
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        let root = format!("{}/data", tile_server_uri().trim_end_matches('/'));
+        app.register_asset_source(
+            TILE_CACHE_ASSET_SOURCE,
+            AssetSourceBuilder::new(move || Box::new(HttpWasmAssetReader::new(root.clone()))),
+        );
     }
 }
 
@@ -639,6 +672,21 @@ fn tile_cache_path(tile: &TileAsset) -> PathBuf {
 #[cfg(not(target_arch = "wasm32"))]
 fn tile_server_uri() -> String {
     std::env::var("TILE_SERVER_URI").unwrap_or_else(|_| DEFAULT_TILE_SERVER_URI.to_string())
+}
+
+#[cfg(target_arch = "wasm32")]
+fn tile_server_uri() -> String {
+    runtime_config_value("tile_server_uri").unwrap_or_else(|| DEFAULT_TILE_SERVER_URI.to_string())
+}
+
+#[cfg(target_arch = "wasm32")]
+fn runtime_config_value(browser_key: &str) -> Option<String> {
+    use web_sys::{UrlSearchParams, window};
+
+    let window = window()?;
+    let search = window.location().search().ok()?;
+    let params = UrlSearchParams::new_with_str(&search).ok()?;
+    params.get(browser_key)
 }
 
 #[cfg(not(target_arch = "wasm32"))]

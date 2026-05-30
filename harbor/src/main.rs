@@ -128,9 +128,21 @@ fn main() {
     app.add_systems(
         Update,
         (
+            map::adjust_tile_load_radius,
             map::update_desired_map_tiles,
             map::download_map_tile_batch,
             map::collect_completed_map_tile_downloads,
+        )
+            .chain()
+            .before(map::spawn_map_tile_batch),
+    );
+
+    #[cfg(target_arch = "wasm32")]
+    app.add_systems(
+        Update,
+        (
+            map::adjust_tile_load_radius,
+            map::update_desired_map_tiles,
         )
             .chain()
             .before(map::spawn_map_tile_batch),
