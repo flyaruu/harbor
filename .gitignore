@@ -5,3 +5,7 @@ harbor/assets/tiles/
 .cache/harbor_tiles/
 
 spacetime.local.json
+map_data/coastline
+map_data/landcover
+map_data/*.pmtiles
+map_data/*.pbf
