@@ -9,6 +9,8 @@ services:
     command:
       - --entrypoints.web.address=:80
       - --providers.file.filename=/etc/traefik/dynamic.yml
+      - --accesslog=true
+      - --log.level=DEBUG
     ports:
       - "80:80"
     volumes:
@@ -28,7 +30,7 @@ services:
   tileserver-gl:
     image: maptiler/tileserver-gl:v5.5.0
     container_name: tileserver-gl
-    command: ["--file", "/map_data/current.pmtiles"]
+    command: ["--verbose", "3", "--file", "/map_data/current.pmtiles"]
     expose:
       - "8080"
     volumes:
