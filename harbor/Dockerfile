@@ -1,6 +1,11 @@
 FROM rust:1.95-bookworm AS builder
 WORKDIR /app
 
+# Keep the wasm release build single-threaded and without debug symbols to
+# reduce peak memory use on smaller hosts.
+ENV CARGO_BUILD_JOBS=1
+ENV RUSTFLAGS=-Cdebuginfo=0 -Ccodegen-units=1
+
 RUN rustup target add wasm32-unknown-unknown \
     && cargo install wasm-bindgen-cli --version 0.2.121
 

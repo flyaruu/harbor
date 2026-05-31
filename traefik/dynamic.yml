@@ -1,0 +1,46 @@
+http:
+  routers:
+    spacetimedb:
+      rule: Host(`spacetimedb.codemonkey.nl`)
+      entryPoints:
+        - web
+      service: spacetimedb
+
+    tileserver-gl:
+      rule: Host(`tileserver-gl.codemonkey.nl`)
+      entryPoints:
+        - web
+      service: tileserver-gl
+
+    osm-pbf-processor:
+      rule: Host(`osm-pbf-processor.codemonkey.nl`)
+      entryPoints:
+        - web
+      service: osm-pbf-processor
+
+    harbor-wasm:
+      rule: Host(`harbor-wasm.codemonkey.nl`)
+      entryPoints:
+        - web
+      service: harbor-wasm
+
+  services:
+    spacetimedb:
+      loadBalancer:
+        servers:
+          - url: http://spacetimedb:3000
+
+    tileserver-gl:
+      loadBalancer:
+        servers:
+          - url: http://tileserver-gl:8080
+
+    osm-pbf-processor:
+      loadBalancer:
+        servers:
+          - url: http://osm_pbf_processor:8081
+
+    harbor-wasm:
+      loadBalancer:
+        servers:
+          - url: http://harbor-wasm:1334

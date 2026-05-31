@@ -4,16 +4,15 @@
 
 services:
   proxy:
-    image: traefik:v3.1
+    image: traefik:v3.3
     container_name: proxy
     command:
-      - --providers.docker=true
-      - --providers.docker.exposedbydefault=false
       - --entrypoints.web.address=:80
+      - --providers.file.filename=/etc/traefik/dynamic.yml
     ports:
       - "80:80"
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik/dynamic.yml:/etc/traefik/dynamic.yml:ro
     restart: unless-stopped
 
   spacetimedb:
@@ -22,11 +21,6 @@ services:
     command: start
     expose:
       - "3000"
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.spacetimedb.rule=Host(`spacetimedb.codemonkey.nl`)
-      - traefik.http.routers.spacetimedb.entrypoints=web
-      - traefik.http.services.spacetimedb.loadbalancer.server.port=3000
     volumes:
       - spacetimedb-data:/root/.local/share/spacetime/data
     restart: unless-stopped
@@ -37,11 +31,6 @@ services:
     command: ["--file", "/map_data/current.pmtiles"]
     expose:
       - "8080"
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.tileserver-gl.rule=Host(`tileserver-gl.codemonkey.nl`)
-      - traefik.http.routers.tileserver-gl.entrypoints=web
-      - traefik.http.services.tileserver-gl.loadbalancer.server.port=8080
     volumes:
       - ./map_data:/map_data
     restart: unless-stopped
@@ -56,11 +45,6 @@ services:
       - tileserver-gl
     expose:
       - "8081"
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.osm-pbf-processor.rule=Host(`osm-pbf-processor.codemonkey.nl`)
-      - traefik.http.routers.osm-pbf-processor.entrypoints=web
-      - traefik.http.services.osm-pbf-processor.loadbalancer.server.port=8081
     volumes:
       - ./osm_pbf_processor/osm_pbf_processor.compose.toml:/app/osm_pbf_processor.toml:ro
       - ./.cache:/.cache
@@ -90,11 +74,6 @@ services:
       - osm_pbf_processor
     expose:
       - "1334"
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.harbor-wasm.rule=Host(`harbor-wasm.codemonkey.nl`)
-      - traefik.http.routers.harbor-wasm.entrypoints=web
-      - traefik.http.services.harbor-wasm.loadbalancer.server.port=1334
     restart: unless-stopped
 
 volumes:
