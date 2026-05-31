@@ -75,6 +75,14 @@ Containerized wasm/browser:
 docker compose up --build spacetimedb osm_pbf_processor harbor-wasm
 ```
 
+The `harbor-wasm` container can inject browser runtime settings from environment
+variables in `compose.yml` or `.env`:
+
+- `HARBOR_SPACETIMEDB_URI`
+- `HARBOR_SPACETIMEDB_MODULE`
+- `HARBOR_SPACETIMEDB_TOKEN`
+- `HARBOR_TILE_SERVER_URI`
+
 Then open:
 
 ```text
@@ -87,6 +95,9 @@ The wasm build reads runtime settings from the browser URL query string:
 - `spacetimedb_module`
 - `spacetimedb_token`
 - `tile_server_uri`
+
+When both are present, URL query parameters take precedence over the injected
+container runtime config.
 
 Example:
 

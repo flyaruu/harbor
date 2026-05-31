@@ -711,12 +711,7 @@ fn tile_server_uri() -> String {
 
 #[cfg(target_arch = "wasm32")]
 fn runtime_config_value(browser_key: &str) -> Option<String> {
-    use web_sys::{UrlSearchParams, window};
-
-    let window = window()?;
-    let search = window.location().search().ok()?;
-    let params = UrlSearchParams::new_with_str(&search).ok()?;
-    params.get(browser_key)
+    crate::runtime::browser_runtime_config_value(browser_key)
 }
 
 #[cfg(not(target_arch = "wasm32"))]

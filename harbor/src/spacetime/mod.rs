@@ -372,12 +372,7 @@ fn runtime_config_value(_browser_key: &str, env_key: &str) -> Option<String> {
 
 #[cfg(target_arch = "wasm32")]
 fn runtime_config_value(browser_key: &str, _env_key: &str) -> Option<String> {
-    use web_sys::{UrlSearchParams, window};
-
-    let window = window()?;
-    let search = window.location().search().ok()?;
-    let params = UrlSearchParams::new_with_str(&search).ok()?;
-    params.get(browser_key)
+    crate::runtime::browser_runtime_config_value(browser_key)
 }
 
 fn projected_ship_name(connection: Option<&StdbConn>, ship_id: u64) -> String {

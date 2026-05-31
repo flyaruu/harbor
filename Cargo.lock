@@ -3528,6 +3528,7 @@ dependencies = [
  "bevy_water",
  "chrono",
  "console_error_panic_hook",
+ "js-sys",
  "spacetimedb-sdk",
  "ureq",
  "web-sys",

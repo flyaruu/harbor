@@ -74,6 +74,11 @@ services:
     depends_on:
       - spacetimedb
       - osm_pbf_processor
+    environment:
+      HARBOR_SPACETIMEDB_URI: ${HARBOR_SPACETIMEDB_URI-}
+      HARBOR_SPACETIMEDB_MODULE: ${HARBOR_SPACETIMEDB_MODULE-}
+      HARBOR_SPACETIMEDB_TOKEN: ${HARBOR_SPACETIMEDB_TOKEN-}
+      HARBOR_TILE_SERVER_URI: ${HARBOR_TILE_SERVER_URI-}
     expose:
       - "1334"
     restart: unless-stopped

@@ -26,9 +26,12 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY harbor/container-index.html /srv/harbor/index.html
+COPY harbor/container-entrypoint.sh /usr/local/bin/harbor-container-entrypoint
 COPY --from=builder /app/harbor/dist /srv/harbor
 COPY --from=builder /app/harbor/assets /srv/harbor/assets
 
+RUN chmod +x /usr/local/bin/harbor-container-entrypoint
+
 EXPOSE 1334
 
-CMD ["python3", "-m", "http.server", "1334", "--bind", "0.0.0.0", "--directory", "/srv/harbor"]
+CMD ["/usr/local/bin/harbor-container-entrypoint"]

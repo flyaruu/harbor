@@ -23,6 +23,7 @@ bevy_water = "0.18.1"
 bevy_stdb = { version = "0.8.2", features = ["browser"] }
 spacetimedb-sdk = { workspace = true, features = ["browser"] }
 console_error_panic_hook = "0.1.7"
+js-sys = "0.3.98"
 web-sys = { version = "0.3.98", features = ["Window", "Location", "UrlSearchParams"] }
 web-time = "1.1.0"
 

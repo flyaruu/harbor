@@ -23,6 +23,7 @@ mod light;
 mod map;
 mod module_bindings;
 mod perf;
+mod runtime;
 mod ship;
 mod ship_class;
 mod spacetime;
