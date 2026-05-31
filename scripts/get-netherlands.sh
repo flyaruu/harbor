@@ -8,7 +8,7 @@ mkdir -p "../map_data/"
 pushd "../map_data/"
 
 if ! [ -f "netherlands-latest.osm.pbf" ]; then
-  curl -fO https://download.geofabrik.de/europe/netherlands-latest.osm.pbf
+  curl -fOL https://download.geofabrik.de/europe/netherlands-latest.osm.pbf
 fi
 
 popd
