@@ -1,5 +1,23 @@
 http:
   routers:
+    harbor-backend:
+      rule: Host(`harbor-wasm.codemonkey.nl`) && PathPrefix(`/backend`)
+      entryPoints:
+        - web
+      priority: 100
+      middlewares:
+        - strip-backend-prefix
+      service: spacetimedb
+
+    harbor-tiles:
+      rule: Host(`harbor-wasm.codemonkey.nl`) && PathPrefix(`/tiles`)
+      entryPoints:
+        - web
+      priority: 100
+      middlewares:
+        - strip-tiles-prefix
+      service: osm-pbf-processor
+
     spacetimedb:
       rule: Host(`spacetimedb.codemonkey.nl`)
       entryPoints:
@@ -44,3 +62,14 @@ http:
       loadBalancer:
         servers:
           - url: http://harbor-wasm:1334
+
+  middlewares:
+    strip-backend-prefix:
+      stripPrefix:
+        prefixes:
+          - /backend
+
+    strip-tiles-prefix:
+      stripPrefix:
+        prefixes:
+          - /tiles

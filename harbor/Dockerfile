@@ -21,6 +21,7 @@ RUN cargo build --release --target wasm32-unknown-unknown -p harbor \
     && mkdir -p /app/harbor/dist \
     && wasm-bindgen \
         --target web \
+        --out-name harbor \
         --out-dir /app/harbor/dist \
         /app/target/wasm32-unknown-unknown/release/harbor.opt.wasm
 

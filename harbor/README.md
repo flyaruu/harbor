@@ -39,11 +39,23 @@ the Cargo separator:
 cargo run -p harbor -- --url http://localhost:3000
 ```
 
+To override the native tile server URL for a single run:
+
+```bash
+cargo run -p harbor -- --tile-url http://localhost:8081
+```
+
 Native config precedence for the SpacetimeDB URI is:
 
 1. `--url`
 2. `SPACETIMEDB_URI`
 3. `http://localhost:3000`
+
+Native config precedence for the tile server URI is:
+
+1. `--tile-url`
+2. `TILE_SERVER_URI`
+3. `http://localhost:8081`
 
 ## Performance Tooling
 

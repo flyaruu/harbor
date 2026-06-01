@@ -701,6 +701,10 @@ fn tile_cache_path(tile: &TileAsset) -> PathBuf {
 
 #[cfg(not(target_arch = "wasm32"))]
 fn tile_server_uri() -> String {
+    if let Some(uri) = crate::runtime::native_cli_tile_server_uri() {
+        return uri;
+    }
+
     std::env::var("TILE_SERVER_URI").unwrap_or_else(|_| DEFAULT_TILE_SERVER_URI.to_string())
 }
 

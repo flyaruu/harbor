@@ -1,6 +1,23 @@
 #[cfg(not(target_arch = "wasm32"))]
 use std::sync::OnceLock;
 
+#[cfg(not(target_arch = "wasm32"))]
+fn native_cli_arg_value(flag: &str) -> Option<String> {
+    let mut args = std::env::args().skip(1);
+
+    while let Some(arg) = args.next() {
+        if let Some(value) = arg.strip_prefix(&format!("{flag}=")) {
+            return (!value.is_empty()).then(|| value.to_owned());
+        }
+
+        if arg == flag {
+            return args.next().filter(|value| !value.is_empty());
+        }
+    }
+
+    None
+}
+
 #[cfg(target_arch = "wasm32")]
 pub fn browser_runtime_config_value(browser_key: &str) -> Option<String> {
     query_param_value(browser_key).or_else(|| injected_config_value(browser_key))
@@ -11,21 +28,16 @@ pub fn native_cli_spacetimedb_uri() -> Option<String> {
     static SPACETIMEDB_URI: OnceLock<Option<String>> = OnceLock::new();
 
     SPACETIMEDB_URI
-        .get_or_init(|| {
-            let mut args = std::env::args().skip(1);
+        .get_or_init(|| native_cli_arg_value("--url"))
+        .clone()
+}
 
-            while let Some(arg) = args.next() {
-                if let Some(value) = arg.strip_prefix("--url=") {
-                    return (!value.is_empty()).then(|| value.to_owned());
-                }
+#[cfg(not(target_arch = "wasm32"))]
+pub fn native_cli_tile_server_uri() -> Option<String> {
+    static TILE_SERVER_URI: OnceLock<Option<String>> = OnceLock::new();
 
-                if arg == "--url" {
-                    return args.next().filter(|value| !value.is_empty());
-                }
-            }
-
-            None
-        })
+    TILE_SERVER_URI
+        .get_or_init(|| native_cli_arg_value("--tile-url"))
         .clone()
 }
 
