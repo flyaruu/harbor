@@ -41,6 +41,7 @@ services:
     build:
       context: .
       dockerfile: osm_pbf_processor/Dockerfile
+    image: flyaruu/harbor_osm_pbf_processor:latest
     container_name: osm_pbf_processor
     command: ["./osm_pbf_processor", "--config", "/app/osm_pbf_processor.toml", "--server"]
     depends_on:
@@ -56,6 +57,7 @@ services:
     build:
       context: .
       dockerfile: location-source/Dockerfile
+    image: flyaruu/harbor_location_source:latest
     container_name: location-source
     depends_on:
       - spacetimedb
@@ -70,6 +72,7 @@ services:
     build:
       context: .
       dockerfile: harbor/Dockerfile
+    image: flyaruu/harbor_harbor_wasm:latest
     container_name: harbor-wasm
     depends_on:
       - spacetimedb

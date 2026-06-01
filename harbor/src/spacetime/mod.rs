@@ -352,6 +352,11 @@ fn reconcile_projected_ships_from_cache(
 }
 
 fn spacetimedb_uri() -> String {
+    #[cfg(not(target_arch = "wasm32"))]
+    if let Some(uri) = crate::runtime::native_cli_spacetimedb_uri() {
+        return uri;
+    }
+
     runtime_config_value("spacetimedb_uri", "SPACETIMEDB_URI")
         .unwrap_or_else(|| DEFAULT_SPACETIMEDB_URI.to_owned())
 }

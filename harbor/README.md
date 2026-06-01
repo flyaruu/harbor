@@ -32,6 +32,19 @@ Desktop:
 cargo run
 ```
 
+To override the native SpacetimeDB URL for a single run, pass `--url` after
+the Cargo separator:
+
+```bash
+cargo run -p harbor -- --url http://localhost:3000
+```
+
+Native config precedence for the SpacetimeDB URI is:
+
+1. `--url`
+2. `SPACETIMEDB_URI`
+3. `http://localhost:3000`
+
 ## Performance Tooling
 
 - An FPS and frame-time overlay is shown in the bottom-right corner by default.
