@@ -20,6 +20,6 @@ build_and_push() {
         .
 }
 
-build_and_push "flyaruu/harbor_osm_pbf_processor:latest" "osm_pbf_processor/Dockerfile"
-build_and_push "flyaruu/harbor_location_source:latest" "location-source/Dockerfile"
+#build_and_push "flyaruu/harbor_osm_pbf_processor:latest" "osm_pbf_processor/Dockerfile"
+#build_and_push "flyaruu/harbor_location_source:latest" "location-source/Dockerfile"
 build_and_push "flyaruu/harbor_harbor_wasm:latest" "harbor/Dockerfile"
