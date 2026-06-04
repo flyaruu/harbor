@@ -60,6 +60,19 @@ Native config precedence for the tile server URI is:
 ## Performance Tooling
 
 - An FPS and frame-time overlay is shown in the bottom-right corner by default.
+- For live native profiling with per-system timings, run Harbor with Tracy enabled:
+
+```bash
+cargo run -p harbor --features tracy
+```
+
+Then open the Tracy desktop app and connect to the running process.
+- If you also want allocation data, enable Tracy memory profiling:
+
+```bash
+cargo run -p harbor --features tracy_memory
+```
+
 - For per-system and per-frame timing breakdowns, run Harbor with Bevy's Chrome trace instrumentation enabled:
 
 ```bash

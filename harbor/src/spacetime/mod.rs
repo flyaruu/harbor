@@ -377,7 +377,7 @@ fn runtime_config_value(_browser_key: &str, env_key: &str) -> Option<String> {
 
 #[cfg(target_arch = "wasm32")]
 fn runtime_config_value(browser_key: &str, _env_key: &str) -> Option<String> {
-    crate::runtime::browser_runtime_config_value(browser_key)
+    crate::runtime::browser_runtime_url_value(browser_key)
 }
 
 fn projected_ship_name(connection: Option<&StdbConn>, ship_id: u64) -> String {

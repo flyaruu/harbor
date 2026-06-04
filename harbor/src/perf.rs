@@ -66,9 +66,31 @@ fn log_profiling_status() {
     );
 }
 
-#[cfg(not(feature = "chrome_trace"))]
+#[cfg(all(not(feature = "chrome_trace"), feature = "tracy_memory"))]
 fn log_profiling_status() {
     info!(
-        "Frame diagnostics enabled. Re-run with `cargo run -p harbor --features chrome_trace` for per-system frame breakdowns in a Chrome trace."
+        "Tracy profiling with memory tracing enabled. Start the Tracy profiler and connect to this process for per-system timings and allocation data."
+    );
+}
+
+#[cfg(all(
+    not(feature = "chrome_trace"),
+    not(feature = "tracy_memory"),
+    feature = "tracy"
+))]
+fn log_profiling_status() {
+    info!(
+        "Tracy profiling enabled. Start the Tracy profiler and connect to this process for per-system timings."
+    );
+}
+
+#[cfg(all(
+    not(feature = "chrome_trace"),
+    not(feature = "tracy"),
+    not(feature = "tracy_memory")
+))]
+fn log_profiling_status() {
+    info!(
+        "Frame diagnostics enabled. Re-run with `cargo run -p harbor --features tracy` for live per-system timings in Tracy, or `cargo run -p harbor --features chrome_trace` for a Chrome trace."
     );
 }

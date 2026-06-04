@@ -715,7 +715,7 @@ fn tile_server_uri() -> String {
 
 #[cfg(target_arch = "wasm32")]
 fn runtime_config_value(browser_key: &str) -> Option<String> {
-    crate::runtime::browser_runtime_config_value(browser_key)
+    crate::runtime::browser_runtime_url_value(browser_key)
 }
 
 #[cfg(not(target_arch = "wasm32"))]

@@ -23,6 +23,11 @@ pub fn browser_runtime_config_value(browser_key: &str) -> Option<String> {
     query_param_value(browser_key).or_else(|| injected_config_value(browser_key))
 }
 
+#[cfg(target_arch = "wasm32")]
+pub fn browser_runtime_url_value(browser_key: &str) -> Option<String> {
+    browser_runtime_config_value(browser_key).map(resolve_browser_url)
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 pub fn native_cli_spacetimedb_uri() -> Option<String> {
     static SPACETIMEDB_URI: OnceLock<Option<String>> = OnceLock::new();
@@ -59,4 +64,22 @@ fn injected_config_value(browser_key: &str) -> Option<String> {
     let config = Reflect::get(&global(), &JsValue::from_str("__HARBOR_RUNTIME_CONFIG__")).ok()?;
     let value = Reflect::get(&config, &JsValue::from_str(browser_key)).ok()?;
     value.as_string().filter(|value| !value.is_empty())
+}
+
+#[cfg(target_arch = "wasm32")]
+fn resolve_browser_url(value: String) -> String {
+    if value.starts_with('/') {
+        if let Some(origin) = browser_origin() {
+            return format!("{}{}", origin.trim_end_matches('/'), value);
+        }
+    }
+
+    value
+}
+
+#[cfg(target_arch = "wasm32")]
+fn browser_origin() -> Option<String> {
+    use web_sys::window;
+
+    window()?.location().origin().ok()
 }
