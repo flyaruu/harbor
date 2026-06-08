@@ -1,33 +1,16 @@
 use anyhow::Result;
 use geo::{Buffer, Coord, LineString, MultiPolygon, unary_union};
-use std::time::{Duration, Instant};
 
-use crate::clip::clip_to_tile_bounds;
+use crate::tile::clip::clip_to_tile_bounds;
 use crate::config::{SimplifyConfig, TransportationConfig};
-use crate::mvt;
-use crate::polygon_decode::decode_feature_polygons;
-use crate::simplify::simplify_polygons;
+use crate::tile::mvt;
+use crate::tile::polygon_decode::decode_feature_polygons;
+use crate::tile::simplify::simplify_polygons;
 
 #[derive(Debug)]
 pub(crate) struct TransportationGeometry {
     pub(crate) extent: u32,
     pub(crate) polygons: MultiPolygon<f64>,
-    pub(crate) timing: TransportationTiming,
-    pub(crate) feature_counts: TransportationFeatureCounts,
-}
-
-#[derive(Clone, Copy, Debug, Default)]
-pub(crate) struct TransportationTiming {
-    pub(crate) decode_buffer_merge: Duration,
-    pub(crate) clip: Duration,
-    pub(crate) simplify: Duration,
-}
-
-#[derive(Clone, Copy, Debug, Default)]
-pub(crate) struct TransportationFeatureCounts {
-    pub(crate) polygons: usize,
-    pub(crate) line_strings: usize,
-    pub(crate) skipped: usize,
 }
 
 pub(crate) fn extract_transportation_geometry(
@@ -41,8 +24,6 @@ pub(crate) fn extract_transportation_geometry(
 
     let extent = layer.extent.unwrap_or(4096);
     let mut geometries = Vec::new();
-    let decode_buffer_merge_start = Instant::now();
-    let mut feature_counts = TransportationFeatureCounts::default();
 
     for feature in &layer.features {
         if !matches_class_filter(
@@ -51,13 +32,11 @@ pub(crate) fn extract_transportation_geometry(
             config.class_filter.as_deref(),
             config.exclude_class.as_deref(),
         ) {
-            feature_counts.skipped += 1;
             continue;
         }
 
         let polygons = match feature.r#type() {
             mvt::GeomType::Polygon => {
-                feature_counts.polygons += 1;
                 decode_feature_polygons(&feature.geometry).map_err(|error| {
                     anyhow::anyhow!(
                         "failed to decode transportation polygon feature {:?}: {error}",
@@ -66,7 +45,6 @@ pub(crate) fn extract_transportation_geometry(
                 })?
             }
             mvt::GeomType::LineString => {
-                feature_counts.line_strings += 1;
                 buffer_transportation_lines(&feature.geometry, config.line_width).map_err(
                     |error| {
                         anyhow::anyhow!(
@@ -77,7 +55,6 @@ pub(crate) fn extract_transportation_geometry(
                 )?
             }
             _ => {
-                feature_counts.skipped += 1;
                 continue;
             }
         };
@@ -88,18 +65,13 @@ pub(crate) fn extract_transportation_geometry(
 
         geometries.push(polygons);
     }
-    let decode_buffer_merge = decode_buffer_merge_start.elapsed();
 
     if geometries.is_empty() {
         return Ok(None);
     }
     let merged = unary_union(geometries.iter());
-    let clip_start = Instant::now();
     let polygons = clip_to_tile_bounds(&merged, extent);
-    let clip = clip_start.elapsed();
-    let simplify_start = Instant::now();
     let (polygons, simplify_stats) = simplify_polygons(&polygons, extent, simplify);
-    let simplify_duration = simplify_start.elapsed();
 
     if simplify.enabled {
         println!(
@@ -114,12 +86,6 @@ pub(crate) fn extract_transportation_geometry(
         Ok(Some(TransportationGeometry {
             extent,
             polygons,
-            timing: TransportationTiming {
-                decode_buffer_merge,
-                clip,
-                simplify: simplify_duration,
-            },
-            feature_counts,
         }))
     }
 }
@@ -349,9 +315,7 @@ mod tests {
             extract_transportation_geometry(&tile, &config, &SimplifyConfig::default())
                 .expect("filtered transportation should decode")
                 .expect("ferry feature should remain");
-
-        assert_eq!(transportation.feature_counts.line_strings, 1);
-        assert_eq!(transportation.feature_counts.skipped, 1);
+        assert!(!transportation.polygons.0.is_empty());
     }
 
     #[test]
@@ -406,8 +370,6 @@ mod tests {
             extract_transportation_geometry(&tile, &config, &SimplifyConfig::default())
                 .expect("filtered transportation should decode")
                 .expect("road feature should remain");
-
-        assert_eq!(transportation.feature_counts.line_strings, 1);
-        assert_eq!(transportation.feature_counts.skipped, 1);
+        assert!(!transportation.polygons.0.is_empty());
     }
 }

@@ -2,11 +2,11 @@ use anyhow::{Context, Result, bail};
 use earcutr::earcut;
 use geo::{Coord, LineString, Polygon};
 
-use crate::building::BuildingGeometry;
 use crate::config::{BuildingConfig, LandConfig, TransportationConfig, WaterConfig};
-use crate::land::LandGeometry;
-use crate::transportation::TransportationGeometry;
-use crate::water::WaterGeometry;
+use crate::tile::features::building::BuildingGeometry;
+use crate::tile::features::land::LandGeometry;
+use crate::tile::features::transportation::TransportationGeometry;
+use crate::tile::features::water::WaterGeometry;
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct SurfaceStyle {
@@ -474,14 +474,15 @@ fn dot(a: [f32; 3], b: [f32; 3]) -> f32 {
 mod tests {
     use geo::{Coord, LineString, MultiPolygon, Polygon};
 
-    use super::*;
+    use crate::tile::features::building::BuildingPart;
+
+use super::*;
 
     #[test]
     fn builds_closed_water_mesh_for_rectangle() {
         let water = WaterGeometry {
             extent: 10,
             polygons: MultiPolygon(vec![rectangle(1.0, 1.0, 4.0, 3.0)]),
-            timing: Default::default(),
         };
         let meshes =
             build_water_meshes(&water, &WaterConfig::default(), 0.0).expect("mesh should build");
@@ -512,7 +513,6 @@ mod tests {
         let land = LandGeometry {
             extent: 10,
             polygons: MultiPolygon(vec![rectangle(1.0, 1.0, 4.0, 3.0)]),
-            timing: Default::default(),
         };
         let mesh = build_land_mesh(&land, &LandConfig::default()).expect("mesh should build");
 
@@ -525,7 +525,6 @@ mod tests {
         let water = WaterGeometry {
             extent: 10,
             polygons: MultiPolygon(vec![rectangle(0.0, 0.0, 10.0, 3.0)]),
-            timing: Default::default(),
         };
         let meshes =
             build_water_meshes(&water, &WaterConfig::default(), 0.0).expect("mesh should build");
@@ -544,12 +543,11 @@ mod tests {
     fn building_walls_include_closing_edge() {
         let buildings = BuildingGeometry {
             extent: 10,
-            parts: vec![crate::building::BuildingPart {
+            parts: vec![BuildingPart {
                 polygon: rectangle(1.0, 1.0, 4.0, 3.0),
                 bottom: 0.0,
                 top: 5.0,
             }],
-            timing: Default::default(),
         };
         let meshes = build_building_meshes(&buildings, &BuildingConfig::default())
             .expect("mesh should build");

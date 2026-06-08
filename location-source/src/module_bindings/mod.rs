@@ -11,6 +11,7 @@ pub mod add_ship_reducer;
 pub mod current_projection_request_type;
 pub mod current_ship_projection_table;
 pub mod current_ship_projection_type;
+pub mod geo_point_type;
 pub mod global_state_table;
 pub mod global_state_type;
 pub mod location_report_table;
@@ -19,6 +20,12 @@ pub mod major_ais_ship_type_type;
 pub mod set_current_projection_request_reducer;
 pub mod ship_table;
 pub mod ship_type;
+pub mod street_poi_table;
+pub mod street_poi_type;
+pub mod town_poi_table;
+pub mod town_poi_type;
+pub mod update_street_reducer;
+pub mod update_town_reducer;
 pub mod upsert_ship_static_data_reducer;
 
 pub use add_location_report_reducer::add_location_report;
@@ -26,6 +33,7 @@ pub use add_ship_reducer::add_ship;
 pub use current_projection_request_type::CurrentProjectionRequest;
 pub use current_ship_projection_table::*;
 pub use current_ship_projection_type::CurrentShipProjection;
+pub use geo_point_type::GeoPoint;
 pub use global_state_table::*;
 pub use global_state_type::GlobalState;
 pub use location_report_table::*;
@@ -34,6 +42,12 @@ pub use major_ais_ship_type_type::MajorAisShipType;
 pub use set_current_projection_request_reducer::set_current_projection_request;
 pub use ship_table::*;
 pub use ship_type::Ship;
+pub use street_poi_table::*;
+pub use street_poi_type::StreetPoi;
+pub use town_poi_table::*;
+pub use town_poi_type::TownPoi;
+pub use update_street_reducer::update_street;
+pub use update_town_reducer::update_town;
 pub use upsert_ship_static_data_reducer::upsert_ship_static_data;
 
 #[derive(Clone, PartialEq, Debug)]
@@ -59,6 +73,12 @@ pub enum Reducer {
     SetCurrentProjectionRequest {
         query_timestamp: __sdk::Timestamp,
         visibility_window_micros: i64,
+    },
+    UpdateStreet {
+        street: StreetPoi,
+    },
+    UpdateTown {
+        town: TownPoi,
     },
     UpsertShipStaticData {
         mmsi: u64,
@@ -92,6 +112,8 @@ impl __sdk::Reducer for Reducer {
             Reducer::AddLocationReport { .. } => "add_location_report",
             Reducer::AddShip { .. } => "add_ship",
             Reducer::SetCurrentProjectionRequest { .. } => "set_current_projection_request",
+            Reducer::UpdateStreet { .. } => "update_street",
+            Reducer::UpdateTown { .. } => "update_town",
             Reducer::UpsertShipStaticData { .. } => "upsert_ship_static_data",
             _ => unreachable!(),
         }
@@ -130,6 +152,14 @@ impl __sdk::Reducer for Reducer {
                     visibility_window_micros: visibility_window_micros.clone(),
                 },
             ),
+            Reducer::UpdateStreet { street } => {
+                __sats::bsatn::to_vec(&update_street_reducer::UpdateStreetArgs {
+                    street: street.clone(),
+                })
+            }
+            Reducer::UpdateTown { town } => {
+                __sats::bsatn::to_vec(&update_town_reducer::UpdateTownArgs { town: town.clone() })
+            }
             Reducer::UpsertShipStaticData {
                 mmsi,
                 name,
@@ -184,6 +214,8 @@ pub struct DbUpdate {
     global_state: __sdk::TableUpdate<GlobalState>,
     location_report: __sdk::TableUpdate<LocationReport>,
     ship: __sdk::TableUpdate<Ship>,
+    street_poi: __sdk::TableUpdate<StreetPoi>,
+    town_poi: __sdk::TableUpdate<TownPoi>,
 }
 
 impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
@@ -204,6 +236,12 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "ship" => db_update
                     .ship
                     .append(ship_table::parse_table_update(table_update)?),
+                "street_poi" => db_update
+                    .street_poi
+                    .append(street_poi_table::parse_table_update(table_update)?),
+                "town_poi" => db_update
+                    .town_poi
+                    .append(town_poi_table::parse_table_update(table_update)?),
 
                 unknown => {
                     return Err(__sdk::InternalError::unknown_name(
@@ -239,6 +277,12 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.ship = cache
             .apply_diff_to_table::<Ship>("ship", &self.ship)
             .with_updates_by_pk(|row| &row.mmsi);
+        diff.street_poi = cache
+            .apply_diff_to_table::<StreetPoi>("street_poi", &self.street_poi)
+            .with_updates_by_pk(|row| &row.id);
+        diff.town_poi = cache
+            .apply_diff_to_table::<TownPoi>("town_poi", &self.town_poi)
+            .with_updates_by_pk(|row| &row.id);
         diff.current_ship_projection = cache.apply_diff_to_table::<CurrentShipProjection>(
             "current_ship_projection",
             &self.current_ship_projection,
@@ -261,6 +305,12 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "ship" => db_update
                     .ship
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "street_poi" => db_update
+                    .street_poi
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "town_poi" => db_update
+                    .town_poi
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 unknown => {
                     return Err(
@@ -287,6 +337,12 @@ impl __sdk::DbUpdate for DbUpdate {
                 "ship" => db_update
                     .ship
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "street_poi" => db_update
+                    .street_poi
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "town_poi" => db_update
+                    .town_poi
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 unknown => {
                     return Err(
                         __sdk::InternalError::unknown_name("table", unknown, "QueryRows").into(),
@@ -306,6 +362,8 @@ pub struct AppliedDiff<'r> {
     global_state: __sdk::TableAppliedDiff<'r, GlobalState>,
     location_report: __sdk::TableAppliedDiff<'r, LocationReport>,
     ship: __sdk::TableAppliedDiff<'r, Ship>,
+    street_poi: __sdk::TableAppliedDiff<'r, StreetPoi>,
+    town_poi: __sdk::TableAppliedDiff<'r, TownPoi>,
     __unused: std::marker::PhantomData<&'r ()>,
 }
 
@@ -335,6 +393,8 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
             event,
         );
         callbacks.invoke_table_row_callbacks::<Ship>("ship", &self.ship, event);
+        callbacks.invoke_table_row_callbacks::<StreetPoi>("street_poi", &self.street_poi, event);
+        callbacks.invoke_table_row_callbacks::<TownPoi>("town_poi", &self.town_poi, event);
     }
 }
 
@@ -999,11 +1059,15 @@ impl __sdk::SpacetimeModule for RemoteModule {
         global_state_table::register_table(client_cache);
         location_report_table::register_table(client_cache);
         ship_table::register_table(client_cache);
+        street_poi_table::register_table(client_cache);
+        town_poi_table::register_table(client_cache);
     }
     const ALL_TABLE_NAMES: &'static [&'static str] = &[
         "current_ship_projection",
         "global_state",
         "location_report",
         "ship",
+        "street_poi",
+        "town_poi",
     ];
 }

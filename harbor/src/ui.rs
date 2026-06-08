@@ -118,7 +118,8 @@ pub fn timestamp_ui(
         .interactable(true)
         .show(ctx, |ui| {
             overlay_frame().show(ui, |ui| {
-                ui.horizontal(|ui| {
+                ui.vertical(|ui| {
+                    ui.horizontal_wrapped(|ui| {
                     if ui.button("Play").clicked() {
                         timestamp.is_editing = false;
                         playback.rate = PLAYBACK_RATE_NORMAL;
@@ -175,6 +176,7 @@ pub fn timestamp_ui(
                         shift_timestamp(&mut timestamp.value, 1);
                         timestamp_changed = true;
                     }
+                    });
 
                     if let Some((oldest, newest)) = slider_bounds(&bounds, current_slider_timestamp)
                     {
@@ -185,7 +187,7 @@ pub fn timestamp_ui(
 
                         if ui
                             .add_sized(
-                                [220.0, 0.0],
+                                [ui.available_width().max(220.0), ui.spacing().interact_size.y],
                                 egui::Slider::new(&mut slider_value, oldest..=newest)
                                     .show_value(false),
                             )
@@ -434,6 +436,7 @@ fn slider_bounds(
         (Some(oldest), Some(newest), _) if oldest <= newest => Some((oldest, newest)),
         (Some(oldest), None, Some(current)) => Some((oldest.min(current), oldest.max(current))),
         (None, Some(newest), Some(current)) => Some((current.min(newest), current.max(newest))),
+        (None, None, Some(current)) => Some((current, current)),
         (Some(oldest), None, None) => Some((oldest, oldest)),
         (None, Some(newest), None) => Some((newest, newest)),
         _ => None,

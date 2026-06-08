@@ -1,28 +1,15 @@
 use std::collections::BTreeMap;
-use std::fs;
-use std::path::Path;
 
 use anyhow::{Context, Result};
 use gltf_json as gltf;
 use gltf_json::validation::{Checked, USize64};
 
-use crate::mesh::MeshBuffers;
+use crate::tile::features::mesh::MeshBuffers;
 
 pub(crate) struct SceneMesh<'a> {
     pub(crate) mesh: &'a MeshBuffers,
     pub(crate) material_tag: &'a str,
     pub(crate) base_color: [f32; 4],
-}
-
-pub(crate) fn write_glb(path: &Path, meshes: &[SceneMesh<'_>]) -> Result<()> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)
-            .with_context(|| format!("failed to create output directory {}", parent.display()))?;
-    }
-
-    let glb = build_glb_bytes(meshes)?;
-
-    fs::write(path, glb).with_context(|| format!("failed to write {}", path.display()))
 }
 
 pub(crate) fn build_glb_bytes(meshes: &[SceneMesh<'_>]) -> Result<Vec<u8>> {
@@ -255,9 +242,6 @@ fn pad_bytes(bytes: &mut Vec<u8>, alignment: usize, value: u8) {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
-    use std::path::PathBuf;
-
     use super::*;
 
     fn test_mesh() -> MeshBuffers {
@@ -269,53 +253,6 @@ mod tests {
             [0.0, 1.0, 0.0],
         );
         mesh
-    }
-
-    fn test_output_path(name: &str) -> PathBuf {
-        std::env::temp_dir()
-            .join("osm_pbf_processor_tests")
-            .join(name)
-    }
-
-    #[test]
-    fn writes_valid_glb_header() {
-        let mesh = test_mesh();
-
-        let output = test_output_path("test-water.glb");
-        write_glb(
-            &output,
-            &[SceneMesh {
-                mesh: &mesh,
-                material_tag: "test_water",
-                base_color: [0.1, 0.35, 0.8, 1.0],
-            }],
-        )
-        .expect("glb should write");
-
-        let bytes = fs::read(&output).expect("glb should exist");
-        assert_eq!(&bytes[..4], b"glTF");
-    }
-
-    #[test]
-    fn creates_parent_directories_before_writing() {
-        let mesh = test_mesh();
-
-        let output = test_output_path("output/14/8396_5421.glb");
-        if let Some(parent) = output.parent() {
-            let _ = fs::remove_dir_all(parent);
-        }
-
-        write_glb(
-            &output,
-            &[SceneMesh {
-                mesh: &mesh,
-                material_tag: "test_water",
-                base_color: [0.1, 0.35, 0.8, 1.0],
-            }],
-        )
-        .expect("glb should write into nested directory");
-
-        assert!(output.exists());
     }
 
     #[test]

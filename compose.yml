@@ -54,6 +54,7 @@ services:
       - 8081
     volumes:
       - ./osm_pbf_processor/osm_pbf_processor.compose.toml:/app/osm_pbf_processor.toml:ro
+      - ./map_data:/map_data:ro
       - ./.cache:/.cache
     restart: unless-stopped
 

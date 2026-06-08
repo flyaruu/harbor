@@ -5,14 +5,17 @@ edition = "2024"
 
 [dependencies]
 anyhow.workspace = true
+log.workspace = true
+env_logger.workspace = true
 earcutr = "0.5.0"
 flate2 = "1.1.9"
 geo = "0.31.0"
 gltf-json = { version = "1.4.1", features = ["names"] }
-indicatif = "0.17.11"
+osmpbfreader = "0.16"
 prost = "0.12.6"
 prost-derive = "0.12.6"
 serde.workspace = true
+spacetimedb-sdk.workspace = true
 toml = "0.9.8"
 tiny_http = "0.12.0"
 ureq = "2.12.1"

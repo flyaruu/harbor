@@ -1,12 +1,11 @@
 use anyhow::Result;
 use geo::Polygon;
-use std::time::{Duration, Instant};
 
-use crate::clip::clip_to_tile_bounds;
+use crate::tile::clip::clip_to_tile_bounds;
 use crate::config::{BuildingConfig, SimplifyConfig};
-use crate::mvt;
-use crate::polygon_decode::decode_feature_polygons;
-use crate::simplify::simplify_polygons;
+use crate::tile::mvt;
+use crate::tile::polygon_decode::decode_feature_polygons;
+use crate::tile::simplify::simplify_polygons;
 
 #[derive(Debug)]
 pub(crate) struct BuildingPart {
@@ -19,15 +18,6 @@ pub(crate) struct BuildingPart {
 pub(crate) struct BuildingGeometry {
     pub(crate) extent: u32,
     pub(crate) parts: Vec<BuildingPart>,
-    pub(crate) timing: BuildingTiming,
-}
-
-#[derive(Clone, Copy, Debug, Default)]
-pub(crate) struct BuildingTiming {
-    pub(crate) decode: Duration,
-    pub(crate) clip: Duration,
-    pub(crate) simplify: Duration,
-    pub(crate) heights: Duration,
 }
 
 pub(crate) fn extract_building_geometry(
@@ -41,42 +31,26 @@ pub(crate) fn extract_building_geometry(
 
     let extent = layer.extent.unwrap_or(4096);
     let mut parts = Vec::new();
-    let mut before_vertices = 0usize;
-    let mut after_vertices = 0usize;
-    let mut decode = Duration::default();
-    let mut clip = Duration::default();
-    let mut simplify_duration = Duration::default();
-    let mut heights = Duration::default();
 
     for feature in &layer.features {
         if feature.r#type() != mvt::GeomType::Polygon {
             continue;
         }
 
-        let decode_start = Instant::now();
         let polygons = decode_feature_polygons(&feature.geometry).map_err(|error| {
             anyhow::anyhow!(
                 "failed to decode building feature {:?}: {error}",
                 feature.id
             )
         })?;
-        decode += decode_start.elapsed();
         if polygons.0.is_empty() {
             continue;
         }
 
-        let clip_start = Instant::now();
         let polygons = clip_to_tile_bounds(&polygons, extent);
-        clip += clip_start.elapsed();
-        let simplify_start = Instant::now();
-        let (polygons, stats) = simplify_polygons(&polygons, extent, simplify);
-        simplify_duration += simplify_start.elapsed();
-        before_vertices += stats.before_vertices;
-        after_vertices += stats.after_vertices;
+        let (polygons, _) = simplify_polygons(&polygons, extent, simplify);
 
-        let heights_start = Instant::now();
         let (bottom, top) = feature_heights(feature, layer, config);
-        heights += heights_start.elapsed();
         for polygon in polygons.0 {
             parts.push(BuildingPart {
                 polygon,
@@ -86,25 +60,12 @@ pub(crate) fn extract_building_geometry(
         }
     }
 
-    if simplify.enabled {
-        println!(
-            "Building simplification: vertices {} -> {}",
-            before_vertices, after_vertices
-        );
-    }
-
     if parts.is_empty() {
         Ok(None)
     } else {
         Ok(Some(BuildingGeometry {
             extent,
             parts,
-            timing: BuildingTiming {
-                decode,
-                clip,
-                simplify: simplify_duration,
-                heights,
-            },
         }))
     }
 }

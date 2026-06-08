@@ -1,28 +1,16 @@
 use anyhow::Result;
 use geo::{BooleanOps, LineString, MultiPolygon, Polygon};
-use std::time::{Duration, Instant};
 
-use crate::clip::{clip_to_tile_bounds, tile_bounds_polygon};
+use crate::tile::clip::{clip_to_tile_bounds, tile_bounds_polygon};
 use crate::config::{LandConfig, SimplifyConfig};
-use crate::mvt;
-use crate::polygon_decode::decode_feature_polygons;
-use crate::simplify::simplify_polygons;
+use crate::tile::mvt;
+use crate::tile::polygon_decode::decode_feature_polygons;
+use crate::tile::simplify::simplify_polygons;
 
 #[derive(Debug)]
 pub(crate) struct LandGeometry {
     pub(crate) extent: u32,
     pub(crate) polygons: MultiPolygon<f64>,
-    pub(crate) timing: LandTiming,
-}
-
-#[derive(Clone, Copy, Debug, Default)]
-pub(crate) struct LandTiming {
-    pub(crate) source: Duration,
-    pub(crate) fill_holes: Duration,
-    pub(crate) subtract_water: Duration,
-    pub(crate) subtract_transportation: Duration,
-    pub(crate) clip: Duration,
-    pub(crate) simplify: Duration,
 }
 
 pub(crate) fn extract_land_geometry(
@@ -33,7 +21,6 @@ pub(crate) fn extract_land_geometry(
     transportation: Option<&MultiPolygon<f64>>,
 ) -> Result<Option<LandGeometry>> {
     let extent = layer_extent(tile, &config.layer).unwrap_or(4096);
-    let source_start = Instant::now();
     let mut polygons = if config.fill_tile {
         tile_bounds_polygon(extent)
     } else {
@@ -42,34 +29,23 @@ pub(crate) fn extract_land_geometry(
         };
         polygons
     };
-    let source = source_start.elapsed();
 
-    let fill_holes_start = Instant::now();
     if !config.fill_tile {
         polygons = fill_polygon_holes(&polygons);
     }
-    let fill_holes = fill_holes_start.elapsed();
 
-    let subtract_water_start = Instant::now();
     if let Some(water) = water {
         polygons = polygons.difference(water);
     }
-    let subtract_water = subtract_water_start.elapsed();
 
-    let subtract_transportation_start = Instant::now();
     if config.clip_transportation
         && let Some(transportation) = transportation
     {
         polygons = polygons.difference(transportation);
     }
-    let subtract_transportation = subtract_transportation_start.elapsed();
 
-    let clip_start = Instant::now();
     polygons = clip_to_tile_bounds(&polygons, extent);
-    let clip = clip_start.elapsed();
-    let simplify_start = Instant::now();
     let (polygons, simplify_stats) = simplify_polygons(&polygons, extent, simplify);
-    let simplify_duration = simplify_start.elapsed();
 
     if simplify.enabled {
         println!(
@@ -84,14 +60,6 @@ pub(crate) fn extract_land_geometry(
         Ok(Some(LandGeometry {
             extent,
             polygons,
-            timing: LandTiming {
-                source,
-                fill_holes,
-                subtract_water,
-                subtract_transportation,
-                clip,
-                simplify: simplify_duration,
-            },
         }))
     }
 }

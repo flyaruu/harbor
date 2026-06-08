@@ -7,3 +7,4 @@ node_modules
 trace-*.json
 *.glb
 *.zip
+map_data

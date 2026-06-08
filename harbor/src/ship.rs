@@ -29,7 +29,7 @@ const SHIP_FOOTPRINT_HEIGHT: f32 = 4.0;
 const SHIP_FOOTPRINT_Y_OFFSET: f32 = -5.5;
 const SHIP_FOOTPRINT_VISUAL_HEIGHT: f32 = 0.9;
 const SHIP_FOOTPRINT_VISUAL_Y_OFFSET: f32 = 0.35;
-const ROUTE_HEIGHT: f32 = 5.0;
+const ROUTE_WAVE_CLEARANCE: f32 = 1.0;
 const ROUTE_WIDTH: f32 = 20.0;
 
 #[derive(Component, Clone, Copy)]
@@ -491,6 +491,7 @@ pub fn select_ship_on_click(
     connection: Option<Res<StdbConn>>,
     projection: Res<TileWorldProjection>,
     map_root: Res<MapRoot>,
+    water_settings: Res<WaterSettings>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut selected_route: ResMut<SelectedShipRoute>,
@@ -587,6 +588,8 @@ pub fn select_ship_on_click(
                 &mut commands,
                 &projection,
                 &map_root,
+                water_settings.height,
+                water_settings.amplitude,
                 &mut meshes,
                 &mut materials,
                 &mut selected_route,
@@ -672,6 +675,8 @@ fn spawn_selected_ship_route(
     commands: &mut Commands,
     projection: &TileWorldProjection,
     map_root: &MapRoot,
+    water_height: f32,
+    water_amplitude: f32,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
     selected_route: &mut SelectedShipRoute,
@@ -679,7 +684,8 @@ fn spawn_selected_ship_route(
     physical_ship: &PhysicalShip,
 ) {
     let location_reports = ship_location_reports(connection, physical_ship.ship_id);
-    let Some(route_mesh) = create_route(projection, &location_reports) else {
+    let Some(route_mesh) = create_route(projection, &location_reports, water_height, water_amplitude)
+    else {
         return;
     };
 
@@ -700,9 +706,8 @@ fn spawn_selected_ship_route(
 
     let mesh = meshes.add(route_mesh);
     let material = materials.add(StandardMaterial {
-        base_color: Color::srgba(0.91, 0.73, 0.24, 0.75),
+        base_color: Color::srgb(0.91, 0.73, 0.24),
         emissive: LinearRgba::rgb(0.25, 0.19, 0.05),
-        alpha_mode: AlphaMode::Blend,
         unlit: true,
         cull_mode: None,
         ..default()
@@ -750,12 +755,15 @@ fn latest_ship_location_report_timestamp(
 fn create_route(
     projection: &TileWorldProjection,
     location_reports: &[LocationReport],
+    water_height: f32,
+    water_amplitude: f32,
 ) -> Option<Mesh> {
     let mut points = Vec::with_capacity(location_reports.len());
+    let route_height = water_height + water_amplitude + ROUTE_WAVE_CLEARANCE;
 
     for report in location_reports {
         let mut position = projection.lat_lon_to_world(report.lat, report.lon);
-        position.y = ROUTE_HEIGHT;
+        position.y = route_height;
 
         if points
             .last()

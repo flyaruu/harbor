@@ -1,9 +1,8 @@
 use anyhow::{Context, Result};
 use tiny_http::{Header, Method, Request, Response, Server, StatusCode};
 
-use crate::config::AppConfig;
-use crate::{convert_tile_bytes_to_glb, tile_io};
-
+use crate::{config::AppConfig, tile::{convert_tile_bytes_to_glb, fetch_tile_bytes}};
+use crate::poi;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct TileRoute {
     zoom: u8,
@@ -31,6 +30,45 @@ pub(crate) fn run(config: &AppConfig) -> Result<()> {
 }
 
 fn handle_request(request: Request, config: &AppConfig) -> Result<()> {
+    if is_import_poi_route(request.url()) {
+        if request.method() != &Method::Post {
+            return respond_plain(request, StatusCode(405), "method not allowed");
+        }
+
+        let towns = match poi::import_towns(&config.poi) {
+            Ok(towns) => towns,
+            Err(error) => {
+                return respond_plain(
+                    request,
+                    StatusCode(500),
+                    &format!("failed to import towns: {error:#}"),
+                );
+            }
+        };
+
+        let streets = match poi::import_streets(&config.poi, &towns) {
+            Ok(streets) => streets,
+            Err(error) => {
+                return respond_plain(
+                    request,
+                    StatusCode(500),
+                    &format!("failed to import streets: {error:#}"),
+                );
+            }
+        };
+
+        let response = Response::from_string(format!(
+            "imported poi data: towns={} streets={}",
+            towns.len(),
+            streets.len()
+        ))
+        .with_header(text_content_type_header()?)
+        .with_header(cors_allow_origin_header()?);
+        return request
+            .respond(response)
+            .context("failed to write HTTP response");
+    }
+
     if request.method() != &Method::Get {
         return respond_plain(request, StatusCode(405), "method not allowed");
     }
@@ -40,7 +78,7 @@ fn handle_request(request: Request, config: &AppConfig) -> Result<()> {
     };
 
     let backend_url = build_backend_url(&config.server.backend, route);
-    let bytes = match tile_io::fetch_tile_bytes(&backend_url) {
+    let bytes = match fetch_tile_bytes(&backend_url) {
         Ok(bytes) => bytes,
         Err(error) => {
             return respond_plain(
@@ -115,6 +153,10 @@ fn build_backend_url(backend: &str, route: TileRoute) -> String {
     format!("{base}/data/v3/{}/{}/{}.pbf", route.zoom, route.x, route.y)
 }
 
+fn is_import_poi_route(url: &str) -> bool {
+    url.split('?').next() == Some("/import_poi")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -163,5 +205,12 @@ mod tests {
             ),
             "http://localhost:8080/data/v3/14/8396/5421.pbf"
         );
+    }
+
+    #[test]
+    fn detects_import_poi_route() {
+        assert!(is_import_poi_route("/import_poi"));
+        assert!(is_import_poi_route("/import_poi?dry_run=1"));
+        assert!(!is_import_poi_route("/data/14/8396/5421.glb"));
     }
 }

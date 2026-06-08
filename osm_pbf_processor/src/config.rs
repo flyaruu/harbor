@@ -11,6 +11,7 @@ const DEFAULT_CONFIG_PATH: &str = "osm_pbf_processor.toml";
 pub(crate) struct AppConfig {
     pub(crate) conversion: ConversionConfig,
     pub(crate) server: ServerConfig,
+    pub(crate) poi: PoiConfig,
 }
 
 impl AppConfig {
@@ -28,13 +29,25 @@ impl AppConfig {
 #[derive(Debug, Default, Deserialize, PartialEq)]
 #[serde(default)]
 pub(crate) struct ConversionConfig {
-    pub(crate) output: Option<PathBuf>,
-    pub(crate) output_glb: Option<PathBuf>,
     pub(crate) simplify: SimplifyConfig,
     pub(crate) land: LandConfig,
     pub(crate) transportation: TransportationConfig,
     pub(crate) building: BuildingConfig,
     pub(crate) water: WaterConfig,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(default)]
+pub(crate) struct PoiConfig {
+    pub(crate) osm_pbf_path: PathBuf,
+}
+
+impl Default for PoiConfig {
+    fn default() -> Self {
+        Self {
+            osm_pbf_path: PathBuf::from("map_data/netherlands-latest.osm.pbf"),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
@@ -196,8 +209,6 @@ mod tests {
         let config: AppConfig = toml::from_str(
             r#"
             [conversion]
-            output = "custom/output"
-            output_glb = "custom.glb"
             [conversion.simplify]
             enabled = true
             tolerance = 3.5
@@ -244,14 +255,6 @@ mod tests {
         )
         .expect("config should parse");
 
-        assert_eq!(
-            config.conversion.output,
-            Some(PathBuf::from("custom/output"))
-        );
-        assert_eq!(
-            config.conversion.output_glb,
-            Some(PathBuf::from("custom.glb"))
-        );
         assert!(config.conversion.simplify.enabled);
         assert_eq!(config.conversion.simplify.tolerance, 3.5);
         assert_eq!(config.conversion.land.blend_layers, vec!["landuse"]);
@@ -259,6 +262,7 @@ mod tests {
         assert!(config.conversion.land.clip_transportation);
         assert_eq!(config.conversion.land.elevation, 2.0);
         assert_eq!(config.conversion.land.xy_scale, 0.25);
+        assert_eq!(config.poi.osm_pbf_path, PathBuf::from("map_data/netherlands-latest.osm.pbf"));
         assert!(config.conversion.transportation.enabled);
         assert_eq!(config.conversion.transportation.layer, "transportation");
         assert_eq!(
@@ -295,8 +299,7 @@ mod tests {
         assert_eq!(config.conversion.simplify, SimplifyConfig::default());
         assert_eq!(config.conversion.land, LandConfig::default());
         assert_eq!(config.conversion.water, WaterConfig::default());
-        assert!(config.conversion.output.is_none());
-        assert!(config.conversion.output_glb.is_none());
         assert_eq!(config.server, ServerConfig::default());
+        assert_eq!(config.poi, PoiConfig::default());
     }
 }

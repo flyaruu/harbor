@@ -1,14 +1,7 @@
-use std::fs;
 use std::io::Read;
-use std::path::Path;
 
 use anyhow::{Context, Result};
 use flate2::read::GzDecoder;
-
-pub(crate) fn read_tile_bytes(path: &Path) -> Result<Vec<u8>> {
-    let bytes = fs::read(path).with_context(|| format!("failed to read {}", path.display()))?;
-    decode_tile_bytes(&path.display().to_string(), bytes)
-}
 
 pub(crate) fn fetch_tile_bytes(url: &str) -> Result<Vec<u8>> {
     let response = ureq::get(url)

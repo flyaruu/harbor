@@ -55,6 +55,70 @@ pub struct LocationReport {
     sog: Option<f64>,
     timestamp: Timestamp,
 }
+
+#[derive(SpacetimeType, Clone, Copy, Debug, PartialEq)]
+pub struct GeoPoint {
+    pub lon: f64,
+    pub lat: f64,
+}
+
+#[spacetimedb::table(accessor = town_poi, public)]
+pub struct TownPoi {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,
+    #[unique]
+    pub osm_id: i64,
+    pub name: String,
+    pub place: String,
+    pub location: GeoPoint,
+}
+
+#[spacetimedb::table(accessor = street_poi, public)]
+pub struct StreetPoi {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,
+    #[unique]
+    pub osm_id: i64,
+    pub name: String,
+    pub highway: String,
+    pub path: Vec<GeoPoint>,
+    pub town_osm_id: Option<i64>,
+    pub town_name: Option<String>,
+    pub town_distance_m: Option<f64>,
+    pub center: GeoPoint,
+}
+
+#[spacetimedb::reducer]
+pub fn update_town(ctx: &ReducerContext, town: TownPoi) -> Result<(), String> {
+    if let Some(existing) = ctx.db.town_poi().osm_id().find(&town.osm_id) {
+        ctx.db.town_poi().id().update(TownPoi {
+            id: existing.id,
+            ..town
+        });
+    } else {
+        ctx.db.town_poi().insert(town);
+    }
+
+    Ok(())
+}
+
+#[spacetimedb::reducer]
+pub fn update_street(ctx: &ReducerContext, street: StreetPoi) -> Result<(), String> {
+    if let Some(existing) = ctx.db.street_poi().osm_id().find(&street.osm_id) {
+        ctx.db.street_poi().id().update(StreetPoi {
+            id: existing.id,
+            ..street
+        });
+    } else {
+        ctx.db.street_poi().insert(street);
+    }
+
+    Ok(())
+}
+
+
 #[spacetimedb::table(accessor = current_projection_request)]
 pub struct CurrentProjectionRequest {
     #[primary_key]

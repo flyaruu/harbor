@@ -1,25 +1,16 @@
 use anyhow::Result;
 use geo::{BooleanOps, MultiPolygon};
-use std::time::{Duration, Instant};
 
-use crate::clip::clip_to_tile_bounds;
+use crate::tile::clip::clip_to_tile_bounds;
 use crate::config::{SimplifyConfig, WaterConfig};
-use crate::mvt;
-use crate::polygon_decode::decode_feature_polygons;
-use crate::simplify::simplify_polygons;
+use crate::tile::mvt;
+use crate::tile::polygon_decode::decode_feature_polygons;
+use crate::tile::simplify::simplify_polygons;
 
 #[derive(Debug)]
 pub(crate) struct WaterGeometry {
     pub(crate) extent: u32,
     pub(crate) polygons: MultiPolygon<f64>,
-    pub(crate) timing: WaterTiming,
-}
-
-#[derive(Clone, Copy, Debug, Default)]
-pub(crate) struct WaterTiming {
-    pub(crate) decode_merge: Duration,
-    pub(crate) clip: Duration,
-    pub(crate) simplify: Duration,
 }
 
 pub(crate) fn extract_water_geometry(
@@ -33,7 +24,6 @@ pub(crate) fn extract_water_geometry(
 
     let extent = layer.extent.unwrap_or(4096);
     let mut merged: Option<MultiPolygon<f64>> = None;
-    let decode_merge_start = Instant::now();
 
     for feature in &layer.features {
         if feature.r#type() != mvt::GeomType::Polygon {
@@ -53,17 +43,12 @@ pub(crate) fn extract_water_geometry(
             None => polygons,
         });
     }
-    let decode_merge = decode_merge_start.elapsed();
 
     let Some(merged) = merged else {
         return Ok(None);
     };
-    let clip_start = Instant::now();
     let clipped = clip_to_tile_bounds(&merged, extent);
-    let clip = clip_start.elapsed();
-    let simplify_start = Instant::now();
     let (polygons, simplify_stats) = simplify_polygons(&clipped, extent, simplify);
-    let simplify_duration = simplify_start.elapsed();
 
     if simplify.enabled {
         println!(
@@ -78,11 +63,6 @@ pub(crate) fn extract_water_geometry(
         Ok(Some(WaterGeometry {
             extent,
             polygons,
-            timing: WaterTiming {
-                decode_merge,
-                clip,
-                simplify: simplify_duration,
-            },
         }))
     }
 }

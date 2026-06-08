@@ -4,6 +4,7 @@ use bevy_water::WaterSettings;
 use spacetimedb_sdk::Table;
 use spacetimedb_sdk::Timestamp;
 use std::collections::{HashMap, HashSet};
+use std::time::Duration;
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
@@ -41,6 +42,14 @@ struct ProjectionRefreshTiming {
 }
 
 #[derive(Default, Resource)]
+struct ProjectionRequestDispatch {
+    pending_timestamp: Option<chrono::DateTime<chrono::Utc>>,
+    pending_changed_at: Option<Instant>,
+    last_sent_timestamp: Option<chrono::DateTime<chrono::Utc>>,
+    last_sent_at: Option<Instant>,
+}
+
+#[derive(Default, Resource)]
 struct ProjectionCache {
     rows: HashMap<u64, CurrentShipProjection>,
     pending_inserts: HashMap<u64, CurrentShipProjection>,
@@ -58,6 +67,7 @@ enum SubscriptionKey {
 impl Plugin for SpacetimePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<ProjectionRefreshTiming>()
+            .init_resource::<ProjectionRequestDispatch>()
             .init_resource::<ProjectionCache>()
             .add_plugins(stdb_plugin())
             .add_systems(
@@ -135,21 +145,45 @@ fn subscribe_on_connect(
 fn request_current_projection_on_timestamp_change(
     current_timestamp: Res<CurrentTimestamp>,
     connection: Option<Res<StdbConn>>,
+    mut projection_dispatch: ResMut<ProjectionRequestDispatch>,
     mut projection_timing: ResMut<ProjectionRefreshTiming>,
 ) {
-    if !current_timestamp.is_changed() {
-        return;
+    if current_timestamp.is_changed() {
+        projection_dispatch.pending_timestamp = current_timestamp.0;
+        projection_dispatch.pending_changed_at = Some(Instant::now());
     }
 
     let Some(connection) = connection else {
         return;
     };
 
-    let Some(current_timestamp) = current_timestamp.0.as_ref() else {
+    let Some(current_timestamp) = projection_dispatch.pending_timestamp else {
         return;
     };
 
-    request_current_projection(&connection, current_timestamp, &mut projection_timing);
+    if projection_dispatch.last_sent_timestamp == Some(current_timestamp) {
+        projection_dispatch.pending_timestamp = None;
+        projection_dispatch.pending_changed_at = None;
+        return;
+    }
+
+    let now = Instant::now();
+    let should_send = projection_dispatch.last_sent_at.is_none_or(|last_sent_at| {
+        now.duration_since(last_sent_at) >= PROJECTION_REQUEST_THROTTLE
+    }) || projection_dispatch.pending_changed_at.is_some_and(|pending_changed_at| {
+        now.duration_since(pending_changed_at) >= PROJECTION_REQUEST_DEBOUNCE
+    });
+
+    if !should_send {
+        return;
+    }
+
+    if request_current_projection(&connection, &current_timestamp, &mut projection_timing) {
+        projection_dispatch.last_sent_timestamp = Some(current_timestamp);
+        projection_dispatch.last_sent_at = Some(now);
+        projection_dispatch.pending_timestamp = None;
+        projection_dispatch.pending_changed_at = None;
+    }
 }
 
 fn sync_initial_timestamp_from_cache(
@@ -254,12 +288,14 @@ fn extend_timestamp_bounds_from_live_reports(
 }
 
 const PROJECTION_VISIBILITY_WINDOW_MICROS: i64 = 10 * 60 * 1_000_000;
+const PROJECTION_REQUEST_THROTTLE: Duration = Duration::from_millis(100);
+const PROJECTION_REQUEST_DEBOUNCE: Duration = Duration::from_millis(150);
 
 fn request_current_projection(
     connection: &StdbConn,
     current_timestamp: &chrono::DateTime<chrono::Utc>,
     projection_timing: &mut ProjectionRefreshTiming,
-) {
+) -> bool {
     let timestamp = Timestamp::parse_from_rfc3339(&current_timestamp.to_rfc3339())
         .expect("current timestamp should always format as RFC3339");
 
@@ -268,8 +304,10 @@ fn request_current_projection(
         .set_current_projection_request(timestamp, PROJECTION_VISIBILITY_WINDOW_MICROS)
     {
         warn!("failed to request current ship projection: {error}");
+        false
     } else {
         projection_timing.started_at = Some(Instant::now());
+        true
     }
 }
 
